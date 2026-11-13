@@ -151,6 +151,111 @@ test('manual rode and charted depth from the webapp routes', async () => {
   t.plugin.stop()
 })
 
+function router (t) {
+  const routes = {}
+  t.plugin.registerWithRouter({
+    use () {},
+    get (p, h) { routes['GET ' + p] = h },
+    post (p, h) { routes['POST ' + p] = h }
+  })
+  return (key, body) => new Promise(resolve => {
+    const res = { code: 200, status (c) { this.code = c; return this }, json (j) { resolve({ code: this.code, body: j }) } }
+    routes[key]({ body }, res)
+  })
+}
+
+test('rode sections from the settings: chain then rope', () => {
+  const t = setup({
+    'navigation.position': ANTENNA,
+    'navigation.headingTrue': 0,
+    'environment.depth.belowSurface': 9,
+    'navigation.anchor.rodeLength': 60,
+    'navigation.anchor.position': move(ANTENNA, 0, 53)
+  }, { rollerHeight: 1, rodeSections: [{ material: 'chain', length: 15, weight: 2.2 }, { material: 'nylon', weight: 0.16 }] })
+  const s = t.plugin.compute()
+  assert.deepStrictEqual(s.rode.map(r => [r.material, r.out]), [['chain', 15], ['nylon', 45]])
+  assert.strictEqual(s.result.state, 'catenary')
+  assert.ok(s.result.ropeOnBottom > 0, 'rope on the bottom')
+  assert.strictEqual(s.sections.length, 2)
+  close(lastValue(t.app, 'navigation.anchor.catenary.ropeOnBottom'), s.result.ropeOnBottom, 1e-9)
+  t.plugin.stop()
+  const chain = setup({
+    'navigation.position': ANTENNA,
+    'environment.depth.belowSurface': 9,
+    'navigation.anchor.rodeLength': 60,
+    'navigation.anchor.position': move(ANTENNA, 0, 53)
+  }, { rollerHeight: 1 })
+  const c = chain.plugin.compute()
+  assert.ok(c.result.liftTension > s.result.liftTension, 'all chain takes more pull to lift the anchor')
+  chain.plugin.stop()
+})
+
+test('snubber: hook on, takes the load with enough slack loop, cleared when hauled in', async () => {
+  const t = setup({
+    'navigation.position': ANTENNA,
+    'navigation.headingTrue': 0,
+    'environment.depth.belowSurface': 8,
+    'navigation.anchor.rodeLength': 50,
+    'navigation.anchor.position': move(ANTENNA, 0, 45)
+  }, { rollerForward: 4, rollerHeight: 1.2, snubberLength: 5, snubberAft: 0.5, snubberHeight: 0.4 })
+  const call = router(t)
+  let s = t.plugin.compute()
+  assert.deepStrictEqual(s.snubber, { configured: true, on: false })
+  close(s.result.span, 41, 0.01, 'to the roller')
+
+  // hooked on, then 6 m more chain let out: the snubber takes the load
+  s = (await call('POST /snubber', { on: true, loop: 6 })).body
+  assert.strictEqual(s.snubber.on, true)
+  close(s.snubber.hookAt, 44, 1e-9)
+  assert.strictEqual(s.snubber.loaded, true)
+  close(s.result.span, 41.5, 0.01, 'to the snubber fitting')
+  close(s.result.height, 8.4, 1e-9)
+  close(s.result.length, 49, 1e-9, '44 m of chain + 5 m snubber')
+  assert.strictEqual(s.sections[s.sections.length - 1].kind, 'snubber')
+  close(s.snubber.tension, s.result.rollerTension, 1e-9)
+  assert.ok(s.snubber.loopPoints.length > 2)
+  assert.strictEqual(lastValue(t.app, 'navigation.anchor.catenary.snubberLoaded'), true)
+  close(lastValue(t.app, 'navigation.anchor.catenary.rodeLength'), 50, 1e-9, 'rode out is still 50 m')
+
+  // only 1 m of loop: the chain comes tight over the roller first
+  s = (await call('POST /snubber', { on: true, loop: 1 })).body
+  assert.strictEqual(s.snubber.loaded, false)
+  assert.ok(s.snubber.note)
+  close(s.result.span, 41, 0.01, 'back to the roller')
+  assert.strictEqual(lastValue(t.app, 'navigation.anchor.catenary.snubberLoaded'), false)
+
+  // chain hauled in past the hook: snubber is off
+  t.set('navigation.anchor.rodeLength', 40)
+  s = t.plugin.compute()
+  assert.strictEqual(s.snubber.on, false)
+
+  assert.strictEqual((await call('POST /snubber', { on: true, loop: -1 })).code, 400)
+  t.plugin.stop()
+})
+
+test('snubber needs a length in the settings, and is cleared when the anchor comes up', async () => {
+  const paths = {
+    'navigation.position': ANTENNA,
+    'environment.depth.belowSurface': 8,
+    'navigation.anchor.rodeLength': 40,
+    'navigation.anchor.position': move(ANTENNA, 0, 30)
+  }
+  const none = setup(paths)
+  assert.strictEqual((await router(none)('POST /snubber', { on: true })).code, 409)
+  none.plugin.stop()
+
+  const rope = setup(paths, { snubberLength: 4, rodeSections: [{ material: 'chain', length: 30 }, { material: 'nylon', weight: 0.16 }] })
+  assert.strictEqual((await router(rope)('POST /snubber', { on: true, loop: 2 })).code, 400, 'hook on the rope')
+  assert.strictEqual((await router(rope)('POST /snubber', { on: true, loop: 12 })).code, 200, 'hook on the chain')
+  rope.plugin.stop()
+
+  const t = setup(paths, { snubberLength: 4 })
+  assert.strictEqual((await router(t)('POST /snubber', { on: true, loop: 3 })).body.snubber.on, true)
+  t.set('navigation.anchor.position', null)
+  assert.strictEqual(t.plugin.compute().snubber.on, false)
+  t.plugin.stop()
+})
+
 ;(async () => {
   let failed = 0
   for (const t of tests) {

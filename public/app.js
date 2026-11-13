@@ -1,4 +1,4 @@
-/* Anchor catenary webapp: polls the plugin and draws the chain. */
+/* Anchor catenary webapp: polls the plugin and draws the rode. */
 (function () {
   const API = '/plugins/signalk-anchor-catenary'
   const NS = 'http://www.w3.org/2000/svg'
@@ -40,6 +40,13 @@
 
   // ------------------------------------------------------------ side view
 
+  // Line width for a section: heavier chain is drawn thicker
+  function width (sec, def) {
+    if (sec.kind !== 'chain') return 2.5
+    const kg = def && fin(def.kgPerMetre) ? def.kgPerMetre : 2.2
+    return Math.max(2, Math.min(6, 3 * Math.sqrt(kg / 2.2)))
+  }
+
   function drawSide () {
     const svg = $('side')
     svg.innerHTML = ''
@@ -50,11 +57,14 @@
     }
     const ex = Number($('exaggerate').value) || 1
     const depth = state.depth.value
-    const rollerH = r.height // above seabed
+    const sn = state.snubber || {}
+    // the rode ends at (r.span, r.height): the roller, or the snubber fitting
+    const X = sn.loaded ? sn.rollerX : r.span // roller
+    const rollerH = sn.loaded ? sn.rollerY : r.height // above seabed
     const surface = depth
     const tide = state.inputs.tide
     const bowExtent = Math.max(4, Math.min(12, (state.inputs.boatLength || 10) * 0.5))
-    const xMax = Math.max(r.span, fin(r.liftSpan) ? Math.min(r.liftSpan, r.span * 1.6) : 0) + bowExtent
+    const xMax = Math.max(r.span, X, fin(r.liftSpan) ? Math.min(r.liftSpan, r.span * 1.6) : 0) + bowExtent
     // at least 30 m wide, so the boat doesn't fill the view when it lies over the anchor
     const xMin = Math.min(-Math.max(3, r.span * 0.06), xMax - 30)
     const yMax = Math.max(rollerH, surface) + 1
@@ -87,11 +97,10 @@
     if (fin(r.liftSpan) && r.liftSpan > 0 && px(r.liftSpan) < W - 20) {
       el('line', { x1: px(r.liftSpan), x2: px(r.liftSpan), y1: 18, y2: py(0), stroke: css('--warn'), 'stroke-dasharray': '4 4', 'stroke-width': 1.5 }, svg)
       const right = px(r.liftSpan) > W * 0.6
-      el('text', { x: px(r.liftSpan) + (right ? -6 : 6), y: 14, 'text-anchor': right ? 'end' : 'start', fill: css('--warn') }, svg, narrow ? `lifts at ${r.liftSpan.toFixed(0)} m` : `anchor lifts with roller here (${r.liftSpan.toFixed(0)} m)`)
+      el('text', { x: px(r.liftSpan) + (right ? -6 : 6), y: 14, 'text-anchor': right ? 'end' : 'start', fill: css('--warn') }, svg, narrow ? `lifts at ${r.liftSpan.toFixed(0)} m` : `anchor lifts with ${sn.loaded ? 'snubber' : 'roller'} here (${r.liftSpan.toFixed(0)} m)`)
     }
 
     // bow
-    const X = r.span
     const deckY = rollerH + 0.3
     const keelY = Math.max(surface - 1.5, 0.3)
     el('polygon', {
@@ -100,24 +109,27 @@
     }, svg)
     el('circle', { cx: px(X), cy: py(rollerH), r: 5, fill: css('--accent') }, svg)
 
-    // chain
-    const prof = state.profile || []
+    // rode, section by section
+    const secs = state.sections || []
+    const colour = kind => css(kind === 'rope' ? '--rope' : kind === 'snubber' ? '--snubber' : '--chain')
+    const override = r.state === 'lifting' ? css('--alarm') : r.state === 'taut' ? css('--warn') : null
+    for (const sec of secs) {
+      if (sec.bottom.length > 1 && sec.bottom[1][0] - sec.bottom[0][0] > 1e-3) {
+        el('polyline', { points: pts(sec.bottom), fill: 'none', stroke: sec.kind === 'chain' ? css('--bottom-chain') : colour(sec.kind), 'stroke-width': sec.kind === 'chain' ? 5 : 4 }, svg)
+      }
+    }
     if (r.state === 'catenary' && r.touchdown > 0) {
-      el('polyline', { points: pts([[0, 0], [r.touchdown, 0]]), fill: 'none', stroke: css('--bottom-chain'), 'stroke-width': 5 }, svg)
       el('circle', { cx: px(r.touchdown), cy: py(0), r: 4, fill: css('--bottom-chain') }, svg)
       el('text', { x: Math.min(Math.max(px(r.touchdown), 90), W - 90), y: py(0) + 17, 'text-anchor': 'middle' }, svg, narrow ? `off bottom at ${r.touchdown.toFixed(1)} m` : `leaves bottom ${r.touchdown.toFixed(1)} m from anchor`)
     }
-    let hanging = r.state === 'catenary' && r.touchdown > 0 ? prof.slice(1) : prof
     if (r.state === 'slack') {
-      // chain along the bottom to the foot of the roller, the rest piled up there
+      // the rest piled up at the foot of the boat end
       // (where it really lies is unknown: it depends on how the boat moved)
-      hanging = [[X, 0], [X, rollerH]]
-      if (X > 0) el('polyline', { points: pts([[0, 0], [X, 0]]), fill: 'none', stroke: css('--bottom-chain'), 'stroke-width': 5 }, svg)
-      const extra = r.onBottom - X
+      const extra = r.onBottom - r.span
       if (extra > 0.5) {
         const half = Math.max(10, Math.min(70, Math.sqrt(extra) * 9))
         const loops = Math.max(3, Math.round(half / 6))
-        const fx = px(X); const fy = py(0)
+        const fx = px(r.span); const fy = py(0)
         let d = `M${fx - half},${fy}`
         for (let i = 0; i < loops; i++) {
           const x0 = fx - half + (2 * half) * i / loops
@@ -129,8 +141,23 @@
         el('text', { x: Math.min(Math.max(fx, 110), W - 110), y: py(0) + 17, 'text-anchor': 'middle' }, svg, `${extra.toFixed(0)} m slack lying on the bottom`)
       }
     }
-    const chainColor = r.state === 'lifting' ? css('--alarm') : r.state === 'taut' ? css('--warn') : css('--chain')
-    el('polyline', { points: pts(hanging), fill: 'none', stroke: chainColor, 'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-dasharray': r.state === 'taut' ? '8 6' : '' }, svg)
+    secs.forEach((sec, i) => {
+      if (sec.hanging.length < 2) return
+      el('polyline', {
+        points: pts(sec.hanging),
+        fill: 'none',
+        stroke: override && sec.kind !== 'snubber' ? override : colour(sec.kind),
+        'stroke-width': width(sec, (state.rode || [])[i]),
+        'stroke-linejoin': 'round',
+        'stroke-dasharray': r.state === 'taut' ? '8 6' : ''
+      }, svg)
+    })
+    if (sn.loaded) {
+      // slack loop of chain from the hook up to the roller, the hook and the fitting
+      el('polyline', { points: pts(sn.loopPoints), fill: 'none', stroke: css('--chain'), 'stroke-width': 2.5, 'stroke-linejoin': 'round' }, svg)
+      el('circle', { cx: px(sn.hook[0]), cy: py(sn.hook[1]), r: 4, fill: css('--snubber') }, svg)
+      el('circle', { cx: px(sn.fittingX), cy: py(sn.fittingY), r: 4, fill: css('--snubber') }, svg)
+    }
 
     // anchor
     const ax = px(0); const ay = py(0)
@@ -141,7 +168,7 @@
     }
 
     // dimensions
-    el('text', { x: px(X) - 10, y: Math.max(32, py(rollerH) - 8), 'text-anchor': 'end' }, svg, `${deg(r.rollerAngle)} at roller`)
+    el('text', { x: px(X) - 10, y: Math.max(32, py(rollerH) - 8), 'text-anchor': 'end' }, svg, `${deg(r.rollerAngle)} at ${sn.loaded ? 'snubber' : 'roller'}`)
     el('text', { x: W / 2, y: py(0) + 37, 'text-anchor': 'middle' }, svg, `${r.span.toFixed(1)} m to anchor · ${depth.toFixed(1)} m deep`)
   }
 
@@ -158,7 +185,8 @@
     const r = s.result
     const anchor = s.inputs.anchor
     const ant = offset(anchor, s.inputs.antenna)
-    const rol = offset(anchor, s.geometry.roller)
+    const roller = offset(anchor, s.geometry.roller)
+    const rol = offset(anchor, s.end || s.geometry.roller) // where the load is taken
     const L = s.inputs.boatLength || 10
     const B = s.inputs.boatBeam || L / 3
     const reach = Math.max(r.maxSpan || 0, Math.hypot(ant.e, ant.n) + L) * 1.1
@@ -168,7 +196,7 @@
 
     el('circle', { cx: 200, cy: 200, r: (r.maxSpan || 0) * k, fill: 'none', stroke: css('--line'), 'stroke-dasharray': '3 4' }, svg)
     if (fin(r.liftSpan)) el('circle', { cx: 200, cy: 200, r: r.liftSpan * k, fill: 'none', stroke: css('--warn'), 'stroke-dasharray': '6 5' }, svg)
-    el('text', { x: 200, y: 200 - (r.liftSpan || 0) * k - 4, 'text-anchor': 'middle', fill: css('--warn'), 'font-size': 11 }, svg, 'roller here lifts anchor')
+    el('text', { x: 200, y: 200 - (r.liftSpan || 0) * k - 4, 'text-anchor': 'middle', fill: css('--warn'), 'font-size': 11 }, svg, `${s.snubber && s.snubber.loaded ? 'snubber' : 'roller'} here lifts anchor`)
 
     // hull, bow at the roller
     const hdg = s.inputs.heading || 0
@@ -186,11 +214,12 @@
     const tdFrac = r.state === 'catenary' ? r.touchdown / r.span : 0
     el('line', { x1: X(0), y1: Y(0), x2: X(rol.e * tdFrac), y2: Y(rol.n * tdFrac), stroke: css('--bottom-chain'), 'stroke-width': 4 }, svg)
     el('line', { x1: X(rol.e * tdFrac), y1: Y(rol.n * tdFrac), x2: X(rol.e), y2: Y(rol.n), stroke: r.state === 'lifting' ? css('--alarm') : css('--chain'), 'stroke-width': 2 }, svg)
-    el('circle', { cx: X(rol.e), cy: Y(rol.n), r: 3.5, fill: css('--accent') }, svg)
+    el('circle', { cx: X(roller.e), cy: Y(roller.n), r: 3.5, fill: css('--accent') }, svg)
+    if (s.snubber && s.snubber.loaded) el('circle', { cx: X(rol.e), cy: Y(rol.n), r: 3, fill: css('--snubber') }, svg)
     el('circle', { cx: X(ant.e), cy: Y(ant.n), r: 2.5, fill: css('--muted') }, svg)
     const a = el('g', { transform: 'translate(200,200)', stroke: css('--chain'), 'stroke-width': 2, fill: 'none' }, svg)
     el('path', { d: 'M0,-9 L0,8 M-7,3 Q0,12 7,3 M-5,-5 L5,-5' }, a)
-    el('text', { x: 392, y: 392, 'text-anchor': 'end', class: 'muted', 'font-size': 11 }, svg, `ring ${(r.maxSpan || 0).toFixed(0)} m = chain bar tight`)
+    el('text', { x: 392, y: 392, 'text-anchor': 'end', class: 'muted', 'font-size': 11 }, svg, `ring ${(r.maxSpan || 0).toFixed(0)} m = rode bar tight`)
   }
 
   // ---------------------------------------------------------------- stats
@@ -204,7 +233,7 @@
 
   const STATES = {
     slack: ['Slack', 'ok'],
-    catenary: ['Chain on bottom', 'ok'],
+    catenary: ['Rode on bottom', 'ok'],
     lifting: ['Lifting anchor', 'alarm'],
     taut: ['Inputs disagree', 'warn']
   }
@@ -219,16 +248,19 @@
 
     const dl = $('stats'); dl.innerHTML = ''
     if (r) {
-      row(dl, 'Chain out', m(r.length, 0) + ` <span class="small">scope ${r.scope.toFixed(1)}:1</span>`)
+      const sn = s.snubber || {}
+      row(dl, 'Rode out', m(s.inputs.rode, 0) + ` <span class="small">scope ${r.scope.toFixed(1)}:1</span>`)
       row(dl, 'On the bottom', m(r.onBottom), r.state === 'lifting' ? 'alarm' : (r.onBottom < 3 ? 'warn' : ''))
+      if ((s.rode || []).some(d => d.kind === 'rope' && d.out > 0)) row(dl, 'Rope on the bottom', m(r.ropeOnBottom), r.ropeOnBottom > 0 ? 'warn' : '')
       row(dl, 'Hanging', m(r.suspended))
-      row(dl, 'Roller to anchor', m(r.span))
+      row(dl, sn.loaded ? 'Snubber to anchor' : 'Roller to anchor', m(r.span))
       const margin = r.liftSpan - r.span
       row(dl, 'Anchor lifts at', m(r.liftSpan) + (r.state !== 'taut' ? ` <span class="small">${margin >= 0 ? margin.toFixed(1) + ' m to go' : 'passed'}</span>` : ''), margin < 2 ? 'warn' : '')
       row(dl, 'Angle at anchor', deg(r.anchorAngle), r.anchorAngle > 0.01 ? 'alarm' : '')
-      row(dl, 'Angle at roller', deg(r.rollerAngle))
+      row(dl, sn.loaded ? 'Angle at snubber' : 'Angle at roller', deg(r.rollerAngle))
       row(dl, 'Pull on anchor', force(r.horizontalTension))
-      row(dl, 'Tension at roller', force(r.rollerTension))
+      if (sn.loaded) row(dl, 'Snubber tension', force(sn.tension))
+      else row(dl, 'Tension at roller', force(r.rollerTension))
       row(dl, 'Pull to lift anchor', force(r.liftTension))
       const rb = s.geometry.relativeBearing
       row(dl, 'Anchor bearing', fin(rb) ? `${Math.abs(rb * DEG).toFixed(0)}° ${rb >= 0 ? 'stbd' : 'port'} of bow` : '–')
@@ -243,15 +275,29 @@
       row(ins, 'Tide', fin(i.tide) ? `${i.tide.toFixed(2)} m` : '–')
       row(ins, 'Roller height', m(i.rollerHeight, 2) + ` <span class="small">${i.rollerHeightSource}</span>`)
       row(ins, 'Roller ahead of GPS', m(i.rollerForward, 1) + ` <span class="small">${i.rollerForwardSource}</span>`)
-      row(ins, 'Chain weight', fin(s.settings.chainWeight) ? `${s.settings.chainWeight} kg/m` : '–')
+      for (const d of s.rode || []) {
+        const len = fin(d.length) ? ` of ${d.length} m` : ''
+        row(ins, d.label, `${d.out.toFixed(0)} m out <span class="small">${len}${fin(d.kgPerMetre) ? (len ? ', ' : '') + d.kgPerMetre + ' kg/m' : ''}</span>`)
+      }
       row(ins, 'Rode length', m(i.rode, 0) + ` <span class="small">${i.rodeSource || 'not set'}</span>`)
       if (s.record && s.record.time) row(ins, 'Anchor down', new Date(s.record.time).toLocaleTimeString() + (fin(s.record.depth) ? ` <span class="small">${s.record.depth.toFixed(1)} m${fin(s.record.tide) ? ', tide ' + s.record.tide.toFixed(2) + ' m' : ''}</span>` : ''))
 
       $('rodeNote').textContent = i.rodeSource === 'sensor'
         ? `Chain counter (${s.settings.rodePath}) is used; the value here is only a fallback.`
         : 'No chain counter: enter the chain out from the roller.'
+      const sn = s.snubber || {}
+      $('snubberForm').hidden = !sn.configured
+      if (sn.configured) {
+        $('snubberNote').textContent = !sn.on
+          ? `Snubber ${sn.length} m. Hook it on, let out more chain until it takes the load, and enter how much.`
+          : sn.loaded
+            ? `Snubber on: hooked at ${sn.hookAt.toFixed(0)} m, ${sn.loop.toFixed(1)} m of chain hangs slack to the roller.`
+            : sn.note || `Snubber on, hooked at ${fin(sn.hookAt) ? sn.hookAt.toFixed(0) : '?'} m.`
+        $('snubberOff').hidden = !sn.on
+      }
       if (!editing) {
         if (fin(s.manual.rode)) $('rode').value = s.manual.rode
+        if (sn.on && fin(sn.loop)) $('loop').value = sn.loop.toFixed(1)
         if (fin(s.manual.datumDepth)) $('seabed').value = s.manual.datumDepth
       }
     }
@@ -261,8 +307,23 @@
     if (!miss.hidden) miss.textContent = 'Waiting for: ' + s.missing.join(', ')
   }
 
+  function drawLegend () {
+    const box = $('legend'); box.innerHTML = ''
+    const s = state
+    if (!s || !s.result) return
+    const item = (cssVar, text, w = 4) => {
+      const span = document.createElement('span')
+      const sw = document.createElement('i'); sw.style.background = css(cssVar); sw.style.height = Math.round(w) + 'px'
+      span.append(sw, document.createTextNode(text))
+      box.appendChild(span)
+    }
+    for (const d of s.rode || []) if (d.out > 0) item(d.kind === 'rope' ? '--rope' : '--chain', `${d.label} ${d.out.toFixed(0)} m`, width({ kind: d.kind }, d) + 1)
+    if (s.snubber && s.snubber.loaded) item('--snubber', `Snubber ${s.snubber.length} m`)
+    item('--bottom-chain', 'on the bottom')
+  }
+
   function draw () {
-    drawStats(); drawSide(); drawPlan()
+    drawStats(); drawSide(); drawPlan(); drawLegend()
   }
 
   // ------------------------------------------------------------- network
@@ -298,7 +359,7 @@
   // ---------------------------------------------------------------- wiring
 
   const numberOrNull = v => (v === '' ? null : Number(v))
-  for (const id of ['rode', 'seabed']) {
+  for (const id of ['rode', 'seabed', 'loop']) {
     $(id).addEventListener('focus', () => { editing = true })
     $(id).addEventListener('blur', () => { editing = false })
   }
@@ -307,6 +368,8 @@
   $('seabedForm').addEventListener('submit', e => { e.preventDefault(); editing = false; post('/seabed', { depth: numberOrNull($('seabed').value) }) })
   $('seabedClear').addEventListener('click', () => { $('seabed').value = ''; post('/seabed', { depth: null }) })
   $('record').addEventListener('click', () => post('/record'))
+  $('snubberForm').addEventListener('submit', e => { e.preventDefault(); editing = false; post('/snubber', { on: true, loop: numberOrNull($('loop').value) }) })
+  $('snubberOff').addEventListener('click', () => { $('loop').value = ''; post('/snubber', { on: false }) })
 
   const prefs = (() => { try { return JSON.parse(localStorage.getItem('anchor-catenary') || '{}') } catch (e) { return {} } })()
   const savePrefs = () => { try { localStorage.setItem('anchor-catenary', JSON.stringify(prefs)) } catch (e) {} }

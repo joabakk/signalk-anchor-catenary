@@ -1,12 +1,12 @@
 /*
- * Signal K plugin: live anchor chain catenary.
+ * Signal K plugin: live anchor rode catenary: chain, rope and snubber.
  *
  * Licensed under the Apache License, Version 2.0
  */
 
 const fs = require('fs')
 const path = require('path')
-const { solve, profile, chainWeightInWater } = require('./lib/catenary')
+const { solve, profile, profileSections, hangBetween, layout, weightInWater, MATERIALS } = require('./lib/catenary')
 const { rollerToAnchor, offset } = require('./lib/geometry')
 
 const OUT = 'navigation.anchor.catenary'
@@ -32,7 +32,26 @@ module.exports = function (app) {
       rollerForward: { type: 'number', title: 'Bow roller distance forward of the GPS antenna (m)', description: 'Leave empty to use sensors.gps.fromBow', default: null },
       rollerStarboard: { type: 'number', title: 'Bow roller distance to starboard of the GPS antenna (m)', description: 'Negative for port', default: 0 },
       rollerHeight: { type: 'number', title: 'Bow roller height above the waterline (m)', description: 'Leave empty to use design.bowAnchorRollerHeight', default: null },
-      chainWeight: { type: 'number', title: 'Chain weight in air (kg/m)', description: 'e.g. 8 mm: 1.4, 10 mm: 2.2, 12 mm: 3.2, 13 mm: 3.8', default: 2.2 },
+      chainWeight: { type: 'number', title: 'Chain weight in air (kg/m)', description: 'For an all-chain rode, and for chain sections below without a weight. e.g. 8 mm: 1.4, 10 mm: 2.2, 12 mm: 3.2, 13 mm: 3.8', default: 2.2 },
+      rodeSections: {
+        type: 'array',
+        title: 'Rode sections, from the anchor end',
+        description: 'Leave empty for an all-chain rode of the chain weight above. Otherwise add the sections in order from the anchor, e.g. 20 m of 12 mm chain, then 10 mm chain, or chain and then rope. The last section runs to the boat whatever length is out.',
+        default: [],
+        items: {
+          type: 'object',
+          properties: {
+            material: { type: 'string', title: 'Material', enum: ['chain', 'nylon', 'polyester'], enumNames: ['Chain', 'Nylon rope', 'Polyester rope'], default: 'chain' },
+            length: { type: 'number', title: 'Length (m)', description: 'Not needed for the last section' },
+            weight: { type: 'number', title: 'Weight in air (kg/m)', description: 'Chain 8 mm: 1.4, 10 mm: 2.2, 12 mm: 3.2. Nylon rope 14 mm: 0.13, 16 mm: 0.17, 18 mm: 0.21' }
+          }
+        }
+      },
+      snubberLength: { type: 'number', title: 'Snubber length (m)', description: 'From the chain hook to where the snubber is made fast. Leave empty if you have no snubber. Hook it on from the webapp', default: null },
+      snubberMaterial: { type: 'string', title: 'Snubber material', enum: ['nylon', 'polyester'], enumNames: ['Nylon rope', 'Polyester rope'], default: 'nylon' },
+      snubberWeight: { type: 'number', title: 'Snubber weight in air (kg/m)', default: 0.17 },
+      snubberAft: { type: 'number', title: 'Snubber made fast: distance aft of the bow roller (m)', description: 'e.g. a stem eye or the bow cleat', default: 0 },
+      snubberHeight: { type: 'number', title: 'Snubber made fast: height above the waterline (m)', description: 'Leave empty for the roller height', default: null },
       depthPath: { type: 'string', title: 'Depth path', description: 'Water depth under the boat. environment.depth.belowSurface is used if empty, else belowTransducer + surfaceToTransducer', default: 'environment.depth.belowSurface' },
       depthOffset: { type: 'number', title: 'Added to the depth path (m)', description: 'e.g. the transducer depth if the depth path is belowTransducer', default: 0 },
       depthMode: {
@@ -123,14 +142,41 @@ module.exports = function (app) {
     }
   }
 
+  // ---------------------------------------------------- rode and snubber
+
+  // The rode from the anchor end, with weights in water
+  function rodeDefinition () {
+    const list = (Array.isArray(options.rodeSections) ? options.rodeSections : [])
+      .filter(s => s && typeof s === 'object' && MATERIALS[s.material || 'chain'])
+    if (!list.length) list.push({ material: 'chain' })
+    const sameKind = m => list.filter(s => (s.material || 'chain') === m).length > 1
+    return list.map(s => {
+      const material = s.material || 'chain'
+      const kg = num(s.weight) !== undefined ? s.weight : (material === 'chain' ? num(options.chainWeight) : undefined)
+      // tell sections of the same material apart by their weight
+      const label = MATERIALS[material].label + (sameKind(material) && kg !== undefined ? ` ${kg} kg/m` : '')
+      return { material, kind: MATERIALS[material].kind, label, length: num(s.length), kgPerMetre: kg, weight: weightInWater(kg, material) }
+    })
+  }
+
+  function snubberConfig () {
+    const length = num(options.snubberLength)
+    if (!(length > 0)) return undefined
+    const material = MATERIALS[options.snubberMaterial] ? options.snubberMaterial : 'nylon'
+    return { length, material, kgPerMetre: num(options.snubberWeight), aft: num(options.snubberAft) || 0, height: num(options.snubberHeight) }
+  }
+
+  const snubberInfo = cfg => ({ configured: true, length: cfg.length, material: cfg.material, aft: cfg.aft, height: cfg.height })
+
   // ------------------------------------------------- depth at the anchor
 
   // Remember the depth and tide when the anchor goes down, so the depth at the
   // anchor can be followed through the tide even when the boat swings away.
   function updateRecord (inputs) {
     const a = node('navigation.anchor.position')
-    if (a && a.value === null && store.record) {
+    if (a && a.value === null && (store.record || store.snubber)) {
       store.record = undefined // anchor up
+      store.snubber = undefined
       save()
       return
     }
@@ -139,6 +185,7 @@ module.exports = function (app) {
     const moved = r && isPos(r.anchor) ? Math.hypot(...Object.values(offset(r.anchor, inputs.anchor))) : Infinity
     if (moved > 2) {
       store.record = { anchor: inputs.anchor, time: new Date().toISOString(), depth: inputs.depth, tide: inputs.tide }
+      if (r) store.snubber = undefined // anchored somewhere else
       save()
     } else if (r.depth === undefined && inputs.depth !== undefined) {
       Object.assign(r, { depth: inputs.depth, tide: inputs.tide, time: new Date().toISOString() })
@@ -179,25 +226,82 @@ module.exports = function (app) {
     if (depth.value === undefined) missing.push('depth (' + depth.source + ')')
     if (inputs.rode === undefined) missing.push('rode length')
 
-    const state = { time: new Date().toISOString(), inputs, depth, record: store.record, manual: { rode: store.manualRode, datumDepth: store.manualDatumDepth }, settings: publicSettings(), missing }
+    const rode = rodeDefinition()
+    const cfg = snubberConfig()
+    const out = inputs.rode !== undefined ? layout(rode, inputs.rode) : []
+    const state = {
+      time: new Date().toISOString(),
+      inputs,
+      depth,
+      record: store.record,
+      manual: { rode: store.manualRode, datumDepth: store.manualDatumDepth },
+      settings: publicSettings(),
+      rode: rode.map((d, i) => ({ label: d.label, material: d.material, kind: d.kind, length: d.length, kgPerMetre: d.kgPerMetre, out: out[i] ? out[i].length : 0 })),
+      snubber: { configured: !!cfg, on: false },
+      missing
+    }
+    if (cfg && store.snubber && inputs.rode !== undefined && inputs.rode < store.snubber.hookAt - 0.5) {
+      store.snubber = undefined // hauled in past the hook
+      save()
+    }
     if (missing.length === 0) {
-      const geo = rollerToAnchor({
+      const where = forward => rollerToAnchor({
         antenna: inputs.antenna,
         heading: inputs.heading || 0,
-        forward: inputs.rollerForward,
+        forward,
         starboard: inputs.rollerStarboard,
         anchor: inputs.anchor
       })
-      const height = depth.value + inputs.rollerHeight
-      const result = solve({
-        span: geo.distance,
-        height,
-        length: inputs.rode,
-        weight: chainWeightInWater(options.chainWeight || 0)
-      })
+      const geo = where(inputs.rollerForward)
+      const rollerY = depth.value + inputs.rollerHeight
+      let result
+      let end = geo.roller // where the load is taken on board
+
+      if (cfg && store.snubber) {
+        const s = state.snubber = Object.assign(snubberInfo(cfg), { on: true, hookAt: store.snubber.hookAt, loop: Math.max(0, inputs.rode - store.snubber.hookAt), loaded: false, rollerX: geo.distance, rollerY })
+        const fitting = where(inputs.rollerForward - cfg.aft)
+        const fitY = depth.value + (cfg.height !== undefined ? cfg.height : inputs.rollerHeight)
+        const chain = layout(rode, s.hookAt)
+        const r = chain.length && solve({
+          span: fitting.distance,
+          height: fitY,
+          sections: chain.concat([{ kind: 'snubber', material: cfg.material, label: 'Snubber', length: cfg.length, weight: weightInWater(cfg.kgPerMetre, cfg.material) }])
+        })
+        if (r) {
+          // The snubber takes the load if the slack loop of chain from the hook
+          // to the roller is long enough to reach
+          const ps = profileSections(r)
+          const before = ps[ps.length - 2]
+          const hook = before.hanging.length ? before.hanging[before.hanging.length - 1] : before.bottom[before.bottom.length - 1]
+          const reach = Math.hypot(geo.distance - hook[0], rollerY - hook[1])
+          if (r.state === 'taut' || (r.state !== 'slack' && reach <= s.loop + 1e-6)) {
+            result = r
+            end = fitting.roller
+            Object.assign(s, {
+              loaded: true,
+              hook,
+              fittingX: r.span,
+              fittingY: r.height,
+              tension: r.rollerTension,
+              angle: r.rollerAngle,
+              loopPoints: hangBetween(hook, [geo.distance, rollerY], s.loop)
+            })
+          } else if (r.state === 'slack') {
+            s.note = 'No pull on the rode, so the snubber carries no load'
+          } else {
+            s.note = 'The slack loop is too short to reach the hook: the chain takes the load, not the snubber'
+          }
+        }
+      }
+      if (!result) result = solve({ span: geo.distance, height: rollerY, sections: out })
+
       state.geometry = geo
+      state.end = end
       state.result = result
+      state.sections = profileSections(result)
       state.profile = profile(result)
+    } else if (cfg && store.snubber) {
+      Object.assign(state.snubber, snubberInfo(cfg), { on: true, hookAt: store.snubber.hookAt })
     }
     last = state
     publish(state)
@@ -208,16 +312,17 @@ module.exports = function (app) {
     const r = state.result
     let text
     if (!r) text = 'Waiting for ' + state.missing.join(', ')
-    else if (r.state === 'catenary') text = `${r.onBottom.toFixed(0)} m chain on the bottom, ${r.span.toFixed(0)} m to the anchor, lifts at ${r.liftSpan.toFixed(0)} m`
-    else if (r.state === 'slack') text = `Chain slack, ${r.onBottom.toFixed(0)} m on the bottom`
-    else if (r.state === 'lifting') text = `Chain is lifting the anchor (${(r.anchorAngle * 180 / Math.PI).toFixed(0)}°)`
+    else if (r.state === 'catenary') text = `${r.onBottom.toFixed(0)} m ${r.ropeOnBottom > 0 ? 'rode' : 'chain'} on the bottom, ${r.span.toFixed(0)} m to the anchor, lifts at ${r.liftSpan.toFixed(0)} m`
+    else if (r.state === 'slack') text = `Rode slack, ${r.onBottom.toFixed(0)} m on the bottom`
+    else if (r.state === 'lifting') text = `Rode is lifting the anchor (${(r.anchorAngle * 180 / Math.PI).toFixed(0)}°)`
     else text = 'Rode shorter than the distance to the anchor: check inputs'
+    if (r && state.snubber.loaded) text += ', on the snubber'
     if (text !== lastStatus && app.setPluginStatus) app.setPluginStatus(text)
     lastStatus = text
   }
 
   function publicSettings () {
-    return { chainWeight: options.chainWeight, depthMode: options.depthMode || 'auto', tidePath: options.tidePath, rodePath: options.rodePath }
+    return { chainWeight: options.chainWeight, depthMode: options.depthMode || 'auto', tidePath: options.tidePath, rodePath: options.rodePath, snubberLength: num(options.snubberLength) }
   }
 
   // ------------------------------------------------------------- output
@@ -231,9 +336,10 @@ module.exports = function (app) {
       add('horizontalDistance', r.span)
       add('rollerHeightAboveSeabed', r.height)
       add('waterDepth', state.depth.value)
-      add('rodeLength', r.length)
+      add('rodeLength', state.inputs.rode)
       add('scope', r.scope)
       add('chainOnBottom', r.onBottom)
+      add('ropeOnBottom', r.ropeOnBottom)
       add('suspendedLength', r.suspended)
       add('touchdownDistance', r.touchdown)
       add('anchorAngle', r.anchorAngle)
@@ -243,6 +349,8 @@ module.exports = function (app) {
       add('liftDistance', r.liftSpan)
       add('liftTension', r.liftTension)
       add('bearingFromBow', state.geometry.relativeBearing)
+      add('snubberLoaded', state.snubber.configured ? !!state.snubber.loaded : null)
+      add('snubberTension', state.snubber.loaded ? state.snubber.tension : null)
     } else {
       add('state', null)
     }
@@ -257,11 +365,11 @@ module.exports = function (app) {
     const s = state.result ? state.result.state : null
     let value = null
     if (s === 'lifting') {
-      value = { state: 'warn', method: ['visual', 'sound'], message: `Anchor chain is lifting the anchor (${(state.result.anchorAngle * 180 / Math.PI).toFixed(0)}° at the shank)` }
+      value = { state: 'warn', method: ['visual', 'sound'], message: `Anchor rode is lifting the anchor (${(state.result.anchorAngle * 180 / Math.PI).toFixed(0)}° at the shank)` }
     } else if (s === 'taut') {
       value = { state: 'warn', method: ['visual'], message: 'Anchor catenary: rode length is shorter than the distance to the anchor. Check anchor position, rode length and depth' }
     } else if (lastNotification) {
-      value = { state: 'normal', method: [], message: 'Anchor chain lies on the bottom' }
+      value = { state: 'normal', method: [], message: 'Anchor rode lies on the bottom again' }
     }
     const key = value ? value.state + value.message.replace(/\(.*\)/, '') : null
     if (key === lastNotification) return undefined
@@ -275,22 +383,25 @@ module.exports = function (app) {
       context: 'vessels.self',
       updates: [{
         meta: [
-          m('state', null, 'slack, catenary (chain on the bottom), lifting (chain lifts the anchor shank) or taut (inputs disagree)'),
+          m('state', null, 'slack, catenary (rode on the bottom), lifting (rode lifts the anchor shank) or taut (inputs disagree)'),
           m('horizontalDistance', 'm', 'Horizontal distance from the bow roller to the anchor'),
           m('rollerHeightAboveSeabed', 'm', 'Height of the bow roller above the seabed at the anchor'),
           m('waterDepth', 'm', 'Water depth at the anchor, tide corrected'),
-          m('rodeLength', 'm', 'Chain out from the roller'),
-          m('scope', 'ratio', 'Rode length / roller height above the seabed'),
-          m('chainOnBottom', 'm', 'Length of chain lying on the seabed'),
-          m('suspendedLength', 'm', 'Length of chain hanging between the seabed and the roller'),
-          m('touchdownDistance', 'm', 'Horizontal distance from the anchor to where the chain leaves the bottom'),
-          m('anchorAngle', 'rad', 'Angle of the chain above the seabed at the anchor; above 0 the shank is lifted'),
-          m('rollerAngle', 'rad', 'Angle of the chain below horizontal at the roller'),
+          m('rodeLength', 'm', 'Rode out from the roller'),
+          m('scope', 'ratio', 'Length of the rode carrying the load / height above the seabed where it is made fast'),
+          m('chainOnBottom', 'm', 'Length of rode lying on the seabed, chain and rope'),
+          m('ropeOnBottom', 'm', 'Length of rope lying on the seabed'),
+          m('suspendedLength', 'm', 'Length of rode hanging between the seabed and the boat'),
+          m('touchdownDistance', 'm', 'Horizontal distance from the anchor to where the rode leaves the bottom'),
+          m('anchorAngle', 'rad', 'Angle of the rode above the seabed at the anchor; above 0 the shank is lifted'),
+          m('rollerAngle', 'rad', 'Angle of the rode below horizontal where the load is taken: the roller, or the snubber fitting when the snubber is loaded'),
           m('horizontalTension', 'N', 'Horizontal pull on the boat and the anchor'),
-          m('rollerTension', 'N', 'Chain tension at the roller'),
-          m('liftDistance', 'm', 'Horizontal distance roller to anchor at which the chain starts to lift the anchor'),
-          m('liftTension', 'N', 'Horizontal pull at which the chain starts to lift the anchor'),
-          m('bearingFromBow', 'rad', 'Direction of the anchor relative to the bow, positive to starboard')
+          m('rollerTension', 'N', 'Tension where the load is taken: the roller, or the snubber fitting when the snubber is loaded'),
+          m('liftDistance', 'm', 'Horizontal distance from the anchor at which the rode starts to lift the anchor'),
+          m('liftTension', 'N', 'Horizontal pull at which the rode starts to lift the anchor'),
+          m('bearingFromBow', 'rad', 'Direction of the anchor relative to the bow, positive to starboard'),
+          m('snubberLoaded', null, 'True when the snubber, not the chain over the roller, takes the load'),
+          m('snubberTension', 'N', 'Tension in the snubber')
         ]
       }]
     })
@@ -339,6 +450,27 @@ module.exports = function (app) {
       const v = req.body && req.body.depth
       if (v !== null && !Number.isFinite(v)) return res.status(400).json({ error: 'depth must be a number of metres or null' })
       store.manualDatumDepth = v === null ? undefined : v
+      save(); compute(); res.json(last)
+    })
+
+    // { on: true, loop: m } hooks the snubber on, with `loop` metres of chain let out
+    // after hooking on; { on: false } takes it off
+    router.post('/snubber', (req, res) => {
+      const b = req.body || {}
+      if (b.on === false) {
+        store.snubber = undefined
+        save(); compute(); return res.json(last)
+      }
+      if (b.on !== true) return res.status(400).json({ error: 'on must be true or false' })
+      if (!snubberConfig()) return res.status(409).json({ error: 'Set the snubber length in the plugin settings first' })
+      const loop = b.loop === undefined || b.loop === null ? 0 : b.loop
+      if (!(Number.isFinite(loop) && loop >= 0)) return res.status(400).json({ error: 'loop must be a number of metres' })
+      const rodeOut = gather().rode
+      if (rodeOut === undefined) return res.status(409).json({ error: 'No rode length' })
+      if (loop >= rodeOut) return res.status(400).json({ error: 'The loop must be shorter than the rode out' })
+      const hooked = layout(rodeDefinition(), rodeOut - loop)
+      if (hooked.length && hooked[hooked.length - 1].kind !== 'chain') return res.status(400).json({ error: 'The hook would be on the rope: let out less after hooking on, or hook the snubber on the chain' })
+      store.snubber = { hookAt: rodeOut - loop, time: new Date().toISOString() }
       save(); compute(); res.json(last)
     })
 

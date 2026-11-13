@@ -1,33 +1,56 @@
 # signalk-anchor-catenary
 
-A Signal K server plugin and webapp that shows how your anchor chain is lying right now, while you are at anchor:
+A Signal K server plugin and webapp that shows how your anchor rode is lying right now, while you are at anchor:
 
-- how much chain lies on the bottom, and where it leaves the bottom
-- whether the chain is lifting the anchor shank, and at what angle
-- the chain angle and tension at the bow roller, and the horizontal pull on the anchor
-- how far the boat can fall back before the chain starts lifting the anchor, and the pull that takes
+- how much chain (and rope) lies on the bottom, and where it leaves the bottom
+- whether the rode is lifting the anchor shank, and at what angle
+- the rode angle and tension at the bow roller or snubber, and the horizontal pull on the anchor
+- how far the boat can fall back before the rode starts lifting the anchor, and the pull that takes
+
+The rode can be all chain, chain of different sizes, or chain and rope, with or without a snubber.
 
 ![Side and plan view](docs/screenshot.png)
 
 Anchor alarm plugins tell you when the boat has left its swinging circle. Scope calculators tell you how much chain to put out.
 This plugin fills the gap between the two. From the anchor position, the boat's position and heading, and the water depth at the
-anchor, it works out the shape the chain must be hanging in.
+anchor, it works out the shape the rode must be hanging in.
 
 ## How it works
 
-The horizontal distance from the bow roller to the anchor, the height of the roller above the seabed and the length of chain out
-fix the shape of the chain completely. The chain hangs in a [catenary](https://en.wikipedia.org/wiki/Catenary).
-The plugin solves for it and reports one of four states:
+The horizontal distance from the bow roller to the anchor, the height of the roller above the seabed and the rode out
+fix the shape of the rode completely. Each section of the rode hangs in a [catenary](https://en.wikipedia.org/wiki/Catenary)
+set by its own weight in water, with the same horizontal pull all along. The plugin solves for it and reports one of four states:
 
 | State | Meaning |
 |---|---|
-| `slack` | The chain is long enough to hang straight down and lie all the way to the anchor. There is no horizontal pull. |
-| `catenary` | Part of the chain lies on the bottom, and the rest hangs up to the roller. This is normal. |
-| `lifting` | All the chain is off the bottom and pulls the anchor shank upwards. The anchor loses holding power. A warning notification is raised. |
-| `taut` | The chain out is shorter than the straight line from the roller to the anchor. That's impossible, so the anchor position, rode length or depth is wrong. |
+| `slack` | The rode is long enough to hang straight down and lie all the way to the anchor. There is no horizontal pull. |
+| `catenary` | Part of the rode lies on the bottom, and the rest hangs up to the boat. This is normal. |
+| `lifting` | All the rode is off the bottom and pulls the anchor shank upwards. The anchor loses holding power. A warning notification is raised. |
+| `taut` | The rode out is shorter than the straight line from the boat to the anchor. That's impossible, so the anchor position, rode length or depth is wrong. |
 
-The tensions come from the chain's weight in water: steel loses about 13 % of its weight in sea water. They are the static tensions
-needed to hold the boat where it is, not the snatch loads from waves or the boat sheering about.
+The tensions come from the rode's weight in water: steel loses about 13 % of its weight in sea water, nylon about 90 % and
+polyester about 75 %. They are the static tensions needed to hold the boat where it is, not the snatch loads from waves or the boat
+sheering about.
+
+### Rode sections: chain sizes, chain and rope
+
+By default the rode is all chain of the weight in the settings. If yours is not, list the sections under **Rode sections**,
+starting at the anchor: for example 20 m of 12 mm chain and then 10 mm chain, or 15 m of chain and then nylon rope. Give each section
+its material, length and weight in air; the last section needs no length, it runs to the boat whatever is out.
+
+Rope weighs almost nothing in water, so it hangs nearly straight and gives very little catenary. With 15 m of chain and nylon above
+it in 10 m of water, the boat goes from rope lying slack on the bottom to the anchor lifting in under a metre of fall-back. The webapp
+shows how much rope lies on the bottom, where it can chafe. Floating rope (polypropylene, Dyneema) isn't modelled.
+
+### Snubber
+
+Set the snubber's length, material and where it is made fast (distance aft of the roller and height above the waterline) in the
+settings. At anchor, hook it on, let out more chain until the snubber takes the load, and enter how much you let out in the
+webapp (**Hook on**). The plugin then solves the chain from the anchor to the hook plus the snubber to its fitting, and checks that the
+slack loop of chain from the hook to the roller is long enough to reach: if it isn't, the chain over the roller takes the load
+and the webapp says so. The snubber is treated as a rope that doesn't stretch.
+
+The snubber is taken off when you press **Off**, when the chain is hauled in past the hook, or when the anchor comes up.
 
 ### Water depth at the anchor, and the tide
 
@@ -58,10 +81,12 @@ The record is kept when the server restarts and cleared when the anchor position
 | Heading | `navigation.headingTrue`, else `navigation.headingMagnetic` + `navigation.magneticVariation` | needed when the roller is not at the antenna |
 | Depth | `environment.depth.belowSurface`, else `belowTransducer` + `surfaceToTransducer` | configurable |
 | Tide | `environment.tide.heightNow` | configurable, optional |
-| Chain out | `navigation.anchor.rodeLength` | configurable; or enter it in the webapp |
+| Rode out | `navigation.anchor.rodeLength` | configurable; or enter it in the webapp |
 | Roller position | setting, else `sensors.gps.fromBow` | metres forward (and to starboard) of the GPS antenna |
 | Roller height | setting, else `design.bowAnchorRollerHeight` | above the waterline |
-| Chain weight | setting | kg/m in air |
+| Chain weight | setting | kg/m in air, for an all-chain rode |
+| Rode sections | setting | material, length and kg/m in air of each section, from the anchor |
+| Snubber | setting | length, material, kg/m, and where it is made fast; hooked on from the webapp |
 
 Position, heading and depth older than 60 s (configurable) are ignored.
 
@@ -70,21 +95,26 @@ Position, heading and depth older than 60 s (configurable) are ignored.
 Published under `navigation.anchor.catenary`, in SI units with metadata:
 
 `state`, `horizontalDistance`, `rollerHeightAboveSeabed`, `waterDepth`, `rodeLength`, `scope`, `chainOnBottom`,
-`suspendedLength`, `touchdownDistance`, `anchorAngle`, `rollerAngle`, `horizontalTension`, `rollerTension`, `liftDistance`,
-`liftTension`, `bearingFromBow`.
+`ropeOnBottom`, `suspendedLength`, `touchdownDistance`, `anchorAngle`, `rollerAngle`, `horizontalTension`, `rollerTension`,
+`liftDistance`, `liftTension`, `bearingFromBow`, `snubberLoaded`, `snubberTension`.
 
-`notifications.navigation.anchor.catenary` goes to `warn` when the chain lifts the anchor or the inputs disagree,
+When the snubber takes the load, distances, angles and tensions are measured at the snubber fitting instead of the roller.
+`chainOnBottom` is all the rode on the bottom, rope included.
+
+`notifications.navigation.anchor.catenary` goes to `warn` when the rode lifts the anchor or the inputs disagree,
 and back to `normal` afterwards. This can be turned off.
 
 ## Webapp
 
 Open **Anchor Catenary** from the server's Webapps menu, or go to `http://<server>:3000/signalk-anchor-catenary/`.
 
-- **Side view**: the chain from the anchor to the roller. Chain lying on the bottom is drawn brown. The dashed line marks where
-  the roller would be when the anchor starts to lift. The vertical scale can be exaggerated.
-- **Plan view**: the boat and the chain from above. The ring shows how far the roller can go before the anchor lifts.
+- **Side view**: the rode from the anchor to the roller, each section in its own colour (heavier chain thicker), and the snubber with
+  its hook and the slack loop of chain. Chain lying on the bottom is drawn brown. The dashed line marks where the roller (or snubber
+  fitting) would be when the anchor starts to lift. The vertical scale can be exaggerated.
+- **Plan view**: the boat and the rode from above. The ring shows how far the roller can go before the anchor lifts.
 - **Numbers** for everything above, with tensions in kgf and kN.
-- **Inputs**: enter the chain out if you have no chain counter, enter a charted depth, or take the current depth as the depth at the anchor.
+- **Inputs**: enter the rode out if you have no chain counter, enter a charted depth, take the current depth as the depth at the
+  anchor, or hook the snubber on and off.
 - Red **night** mode.
 
 Setting values from the webapp needs a logged-in user if the server has security turned on.
@@ -95,15 +125,18 @@ Under `/plugins/signalk-anchor-catenary`:
 
 | | |
 |---|---|
-| `GET /state` | everything the webapp shows, including the chain profile as `[x, y]` points |
-| `POST /rode` `{"length": 40}` | chain out in metres, `null` to clear |
+| `GET /state` | everything the webapp shows, including the rode profile as `[x, y]` points, per section in `sections` |
+| `POST /rode` `{"length": 40}` | rode out in metres, `null` to clear |
 | `POST /seabed` `{"depth": 6.5}` | charted depth at the anchor, `null` to clear |
 | `POST /record` | take the current depth and tide as the depth at the anchor |
+| `POST /snubber` `{"on": true, "loop": 6}` | snubber hooked on, then `loop` m more chain let out; `{"on": false}` to take it off |
 
 ## Limitations
 
 - The seabed is taken as flat between the anchor and the boat.
-- Chain only: a rope rode or a snubber isn't modelled yet.
+- Rope and snubbers don't stretch in the model. In reality a nylon snubber or rode stretches several percent under load, so near
+  `taut` the real tension is lower than the model can tell.
+- Floating rope isn't modelled.
 - Static: wave, sheer and current loads are not included. Use the lift distance and lift tension as margins, not as limits.
 
 ## Development
