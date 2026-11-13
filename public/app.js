@@ -54,8 +54,9 @@
     const surface = depth
     const tide = state.inputs.tide
     const bowExtent = Math.max(4, Math.min(12, (state.inputs.boatLength || 10) * 0.5))
-    const xMin = -Math.max(3, r.span * 0.06)
     const xMax = Math.max(r.span, fin(r.liftSpan) ? Math.min(r.liftSpan, r.span * 1.6) : 0) + bowExtent
+    // at least 30 m wide, so the boat doesn't fill the view when it lies over the anchor
+    const xMin = Math.min(-Math.max(3, r.span * 0.06), xMax - 30)
     const yMax = Math.max(rollerH, surface) + 1
     // draw in screen pixels so text stays readable on a phone; height fits the content
     const W = Math.round(Math.max(320, Math.min(1000, svg.clientWidth || 1000)))
@@ -106,12 +107,30 @@
       el('circle', { cx: px(r.touchdown), cy: py(0), r: 4, fill: css('--bottom-chain') }, svg)
       el('text', { x: Math.min(Math.max(px(r.touchdown), 90), W - 90), y: py(0) + 17, 'text-anchor': 'middle' }, svg, narrow ? `off bottom at ${r.touchdown.toFixed(1)} m` : `leaves bottom ${r.touchdown.toFixed(1)} m from anchor`)
     }
-    const hanging = r.state === 'catenary' && r.touchdown > 0 ? prof.slice(1) : prof
+    let hanging = r.state === 'catenary' && r.touchdown > 0 ? prof.slice(1) : prof
+    if (r.state === 'slack') {
+      // chain along the bottom to the foot of the roller, the rest piled up there
+      // (where it really lies is unknown: it depends on how the boat moved)
+      hanging = [[X, 0], [X, rollerH]]
+      if (X > 0) el('polyline', { points: pts([[0, 0], [X, 0]]), fill: 'none', stroke: css('--bottom-chain'), 'stroke-width': 5 }, svg)
+      const extra = r.onBottom - X
+      if (extra > 0.5) {
+        const half = Math.max(10, Math.min(70, Math.sqrt(extra) * 9))
+        const loops = Math.max(3, Math.round(half / 6))
+        const fx = px(X); const fy = py(0)
+        let d = `M${fx - half},${fy}`
+        for (let i = 0; i < loops; i++) {
+          const x0 = fx - half + (2 * half) * i / loops
+          const x1 = fx - half + (2 * half) * (i + 1) / loops
+          const hgt = 4 + 8 * Math.sin(Math.PI * (i + 0.5) / loops) // a mound
+          d += ` C${x0},${fy - hgt} ${x1},${fy - hgt} ${x1},${fy}`
+        }
+        el('path', { d, fill: 'none', stroke: css('--bottom-chain'), 'stroke-width': 3, 'stroke-linejoin': 'round' }, svg)
+        el('text', { x: Math.min(Math.max(fx, 110), W - 110), y: py(0) + 17, 'text-anchor': 'middle' }, svg, `${extra.toFixed(0)} m slack lying on the bottom`)
+      }
+    }
     const chainColor = r.state === 'lifting' ? css('--alarm') : r.state === 'taut' ? css('--warn') : css('--chain')
     el('polyline', { points: pts(hanging), fill: 'none', stroke: chainColor, 'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-dasharray': r.state === 'taut' ? '8 6' : '' }, svg)
-    if (r.state === 'slack') {
-      el('text', { x: px(X) - 8, y: py(rollerH / 2), 'text-anchor': 'end', class: 'muted' }, svg, `${(r.onBottom - X).toFixed(0)} m slack on the bottom`)
-    }
 
     // anchor
     const ax = px(0); const ay = py(0)
