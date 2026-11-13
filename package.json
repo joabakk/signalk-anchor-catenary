@@ -12,7 +12,8 @@
     "docs/"
   ],
   "scripts": {
-    "test": "node test/catenary.test.js && node test/plugin.test.js"
+    "test": "node test/catenary.test.js && node test/plugin.test.js",
+    "demo": "node demo/demo.js"
   },
   "keywords": [
     "signalk-node-server-plugin",

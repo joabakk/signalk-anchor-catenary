@@ -145,6 +145,16 @@ Under `/plugins/signalk-anchor-catenary`:
 npm test
 ```
 
+To try the webapp without a Signal K server or a boat:
+
+```bash
+npm run demo
+```
+
+Then open http://localhost:3000/. The demo runs the plugin against a simulated boat that swings round the anchor and falls
+back in the gusts, with 50 m of chain and then nylon, a 6 m snubber and a falling tide. Set the rode out and hook the snubber on
+and off from the webapp. Use `PORT=8080 npm run demo` for another port.
+
 ## License
 
 Apache-2.0
