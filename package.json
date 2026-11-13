@@ -1,0 +1,45 @@
+{
+  "name": "signalk-anchor-catenary",
+  "version": "0.1.0",
+  "description": "Live anchor chain catenary for Signal K: how much chain lies on the bottom, chain angle at the anchor and tension, from anchor and boat positions, heading, bow roller position and height, depth and tide",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "lib/",
+    "public/",
+    "README.md",
+    "LICENSE",
+    "docs/"
+  ],
+  "scripts": {
+    "test": "node test/catenary.test.js && node test/plugin.test.js"
+  },
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-webapp",
+    "signalk-category-utility",
+    "anchor",
+    "catenary",
+    "chain",
+    "rode",
+    "scope",
+    "tide"
+  ],
+  "author": {
+    "name": "Joachim Bakke"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joabakk/signalk-anchor-catenary.git"
+  },
+  "signalk": {
+    "displayName": "Anchor Catenary",
+    "screenshots": [
+      "docs/screenshot.png"
+    ]
+  }
+}

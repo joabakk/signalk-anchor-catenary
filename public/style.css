@@ -1,0 +1,113 @@
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --text: #17212b;
+  --muted: #5d6b78;
+  --line: #d5dce3;
+  --water: #d6e9f5;
+  --water-edge: #5a9bc4;
+  --seabed: #b9a17a;
+  --chain: #1f2d3a;
+  --bottom-chain: #8a6d3b;
+  --boat: #e8ecef;
+  --boat-edge: #33424f;
+  --accent: #1769aa;
+  --ok: #2e7d4f;
+  --warn: #b26a00;
+  --alarm: #c62828;
+  --datum: #7b5ea7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151b;
+    --panel: #18212a;
+    --text: #e3e9ee;
+    --muted: #93a1ad;
+    --line: #2c3a46;
+    --water: #11314a;
+    --water-edge: #4c8fbd;
+    --seabed: #6f5d40;
+    --chain: #e3e9ee;
+    --bottom-chain: #d0a65c;
+    --boat: #2a3743;
+    --boat-edge: #b8c5d0;
+    --accent: #5aa9e6;
+    --ok: #5cc28a;
+    --warn: #f0a838;
+    --alarm: #ff6b6b;
+    --datum: #b79be0;
+  }
+}
+:root[data-theme="dark"], :root[data-theme="night"] {
+  --bg: #0f151b; --panel: #18212a; --text: #e3e9ee; --muted: #93a1ad; --line: #2c3a46;
+  --water: #11314a; --water-edge: #4c8fbd; --seabed: #6f5d40; --chain: #e3e9ee; --bottom-chain: #d0a65c;
+  --boat: #2a3743; --boat-edge: #b8c5d0; --accent: #5aa9e6; --ok: #5cc28a; --warn: #f0a838; --alarm: #ff6b6b; --datum: #b79be0;
+}
+/* Night: everything in dim red to keep night vision */
+:root[data-theme="night"] {
+  --bg: #000; --panel: #0a0000; --text: #c43a3a; --muted: #7a2222; --line: #3a0e0e;
+  --water: #1a0303; --water-edge: #6e1a1a; --seabed: #3a0d0d; --chain: #d04040; --bottom-chain: #902c2c;
+  --boat: #140202; --boat-edge: #a83232; --accent: #d04040; --ok: #c43a3a; --warn: #e05050; --alarm: #ff4040; --datum: #8c2a2a;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 14px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+h2 .small { text-transform: none; letter-spacing: 0; }
+.spacer { flex: 1; }
+.small { font-size: 12px; }
+.muted { color: var(--muted); }
+main {
+  display: grid; gap: 12px; padding: 12px 16px;
+  grid-template-columns: 1fr;
+  max-width: 1400px; margin: 0 auto;
+}
+@media (min-width: 700px) { main { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1100px) { main { grid-template-columns: repeat(3, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+.wide { grid-column: 1 / -1; }
+svg { width: 100%; height: auto; display: block; }
+#side { max-height: 55vh; }
+#plan { max-height: 420px; }
+
+.badge {
+  font-weight: 600; font-size: 13px; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid currentColor; color: var(--muted);
+}
+.badge.ok { color: var(--ok); }
+.badge.warn { color: var(--warn); }
+.badge.alarm { color: var(--alarm); }
+
+.stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 8px; }
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+.stats dd .small { font-weight: 400; color: var(--muted); }
+.stats dd.warn { color: var(--warn); }
+.stats dd.alarm { color: var(--alarm); }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.row label { flex: 1 1 150px; }
+input, select, button {
+  font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+}
+input { width: 90px; }
+button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+:root[data-theme="night"] button { color: #000; }
+button.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+p { margin: 4px 0; }
+.missing { margin-top: 8px; color: var(--warn); }
+.error { color: var(--alarm); }
+
+svg text { fill: var(--text); font-size: 13px; font-family: inherit; }
+svg .muted { fill: var(--muted); }
