@@ -65,10 +65,11 @@
     const rollerX = sn.loaded ? sn.rollerX : r.span
     const rollerY = sn.loaded ? sn.rollerY : r.height
     const bowExtent = Math.max(2, r.span * 0.08)
-    const bow = Bow.side(state.settings && state.settings.bowStyle, { x: rollerX, y: rollerY, surface: depth, extent: bowExtent, draft: state.inputs.boatDraft, length: state.inputs.boatLength })
+    const bow = Bow.side(state.settings && state.settings.bowStyle, { x: rollerX, y: rollerY, surface: depth, extent: bowExtent, length: state.inputs.boatLength })
     const showLift = fin(r.liftSpan) && r.liftSpan > 0 && r.liftSpan < r.span * 1.5
-    const xMin = Math.min(-Math.max(1, r.span * 0.04), bow.sprit ? bow.sprit[1][0] - 0.5 : 0)
-    const xMax = Math.max(r.span, rollerX, showLift ? r.liftSpan : 0) + bowExtent
+    const xMin = -Math.max(1, r.span * 0.04)
+    // a modern bow is cut off; the double-ender is shown whole
+    const xMax = Math.max(r.span, rollerX, showLift ? r.liftSpan : 0) + (bow.lines.length ? bow.length * 0.6 : bowExtent)
     const yMax = Math.max(rollerY, depth) + 0.6
     const bottom = 5
     // fitted to the box: the vertical scale is exaggerated, as in a chart profile
@@ -87,10 +88,7 @@
 
     // bow
     el('polygon', { points: pts(bow.hull), fill: css('--line'), stroke: css('--muted'), 'stroke-width': 1, 'stroke-linejoin': 'round' }, svg)
-    if (bow.sprit) {
-      el('polyline', { points: pts(bow.bobstay), fill: 'none', stroke: css('--muted'), 'stroke-width': 0.8 }, svg)
-      el('polyline', { points: pts(bow.sprit), fill: 'none', stroke: css('--muted'), 'stroke-width': 2, 'stroke-linecap': 'round' }, svg)
-    }
+    for (const line of bow.lines) el('polyline', { points: pts(line), fill: 'none', stroke: css('--muted'), 'stroke-width': 0.8 }, svg)
 
     const colour = kind => css(kind === 'rope' ? '--rope' : kind === 'snubber' ? '--snubber' : '--chain')
     const override = r.state === 'lifting' ? css('--alarm') : r.state === 'taut' ? css('--warn') : null

@@ -78,7 +78,7 @@ module.exports = function (app) {
         type: 'string',
         title: 'Bow drawn in the webapp',
         enum: ['modern', 'doubleEnder'],
-        enumNames: ['Modern yacht', 'Traditional double-ender with bowsprit (Colin Archer type, like the Norwegian rescue boats)'],
+        enumNames: ['Modern yacht', 'Traditional double-ender (Colin Archer type, drawn after the rescue boat RS 21 Solli)'],
         default: 'modern'
       }
     }

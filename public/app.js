@@ -67,10 +67,10 @@
     const surface = depth
     const tide = state.inputs.tide
     const bowExtent = Math.max(4, Math.min(12, (state.inputs.boatLength || 10) * 0.5))
-    const bow = Bow.side(state.settings.bowStyle, { x: X, y: rollerH, surface, extent: bowExtent, draft: state.inputs.boatDraft, length: state.inputs.boatLength })
-    const xMax = Math.max(r.span, X, fin(r.liftSpan) ? Math.min(r.liftSpan, r.span * 1.6) : 0) + bowExtent
+    const bow = Bow.side(state.settings.bowStyle, { x: X, y: rollerH, surface, extent: bowExtent, length: state.inputs.boatLength })
+    const xMax = Math.max(r.span, X, fin(r.liftSpan) ? Math.min(r.liftSpan, r.span * 1.6) : 0) + bow.length + 1
     // at least 30 m wide, so the boat doesn't fill the view when it lies over the anchor
-    const xMin = Math.min(-Math.max(3, r.span * 0.06), xMax - 30, bow.sprit ? bow.sprit[1][0] - 1 : 0)
+    const xMin = Math.min(-Math.max(3, r.span * 0.06), xMax - 30)
     const yMax = Math.max(rollerH, surface) + 1
     // draw in screen pixels so text stays readable on a phone; height fits the content
     const W = Math.round(Math.max(320, Math.min(1000, svg.clientWidth || 1000)))
@@ -106,10 +106,7 @@
 
     // bow
     el('polygon', { points: pts(bow.hull), fill: css('--boat'), stroke: css('--boat-edge'), 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg)
-    if (bow.sprit) {
-      el('polyline', { points: pts(bow.bobstay), fill: 'none', stroke: css('--boat-edge'), 'stroke-width': 1.2 }, svg)
-      el('polyline', { points: pts(bow.sprit), fill: 'none', stroke: css('--boat-edge'), 'stroke-width': 4, 'stroke-linecap': 'round' }, svg)
-    }
+    for (const line of bow.lines) el('polyline', { points: pts(line), fill: 'none', stroke: css('--boat-edge'), 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg)
     el('circle', { cx: px(X), cy: py(rollerH), r: 5, fill: css('--accent') }, svg)
 
     // rode, section by section
@@ -171,9 +168,7 @@
     }
 
     // dimensions
-    // clear of the bowsprit, if there is one
-    const labelX = bow.sprit ? Math.min(px(X), px(bow.sprit[1][0])) : px(X)
-    el('text', { x: labelX - 10, y: Math.max(32, py(rollerH) - 8), 'text-anchor': 'end' }, svg, `${deg(r.rollerAngle)} at ${sn.loaded ? 'snubber' : 'roller'}`)
+    el('text', { x: px(X) - 10, y: Math.max(32, py(rollerH) - 8), 'text-anchor': 'end' }, svg, `${deg(r.rollerAngle)} at ${sn.loaded ? 'snubber' : 'roller'}`)
     el('text', { x: W / 2, y: py(0) + 37, 'text-anchor': 'middle' }, svg, `${r.span.toFixed(1)} m to anchor · ${depth.toFixed(1)} m deep`)
   }
 
@@ -214,7 +209,6 @@
       return `${X(e).toFixed(1)},${Y(n).toFixed(1)}`
     }).join(' ')
     el('polygon', { points: toScreen(shape.outline), fill: css('--boat'), stroke: css('--boat-edge'), 'stroke-width': 1.5 }, svg)
-    if (shape.sprit) el('polyline', { points: toScreen(shape.sprit), stroke: css('--boat-edge'), 'stroke-width': 2 }, svg)
 
     // chain line: solid where it hangs, brown where it lies
     const tdFrac = r.state === 'catenary' ? r.touchdown / r.span : 0
