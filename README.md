@@ -87,7 +87,7 @@ The record is kept when the server restarts and cleared when the anchor position
 | Chain weight | setting | kg/m in air, for an all-chain rode |
 | Rode sections | setting | material, length and kg/m in air of each section, from the anchor |
 | Snubber | setting | length, material, kg/m, and where it is made fast; hooked on from the webapp |
-| Boat | `design.length`, `design.beam` | for drawing; and a setting for the hull: modern yacht, or traditional double-ender (drawn after RS 21 Solli) |
+| Boat | `design.length`, `design.beam` | for drawing; and a setting for the boat: modern yacht, or traditional double-ender (hull and rig drawn after RS 21 Solli, without bowsprit) |
 
 Position, heading and depth older than 60 s (configurable) are ignored.
 

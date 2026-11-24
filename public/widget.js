@@ -85,6 +85,11 @@
     el('rect', { x: 0, y: py(depth), width: W, height: py(0) - py(depth), fill: css('--water') }, svg)
     el('line', { x1: 0, x2: W, y1: py(depth), y2: py(depth), stroke: css('--water-edge'), 'stroke-width': 1 }, svg)
     el('rect', { x: 0, y: py(0), width: W, height: H - py(0), fill: css('--seabed') }, svg)
+    // the rig, to scale, cut off at the top of the box
+    if (bow.rig) {
+      const g = el('g', { fill: 'none', stroke: css('--muted'), 'stroke-width': 0.8, 'stroke-linecap': 'round' }, svg)
+      for (const line of bow.rig.lines) el('polyline', { points: ptsToScale(line) }, g)
+    }
     if (showLift) {
       el('line', { x1: px(r.liftSpan), x2: px(r.liftSpan), y1: 0, y2: py(0), stroke: css('--warn'), 'stroke-dasharray': '3 3', 'stroke-width': 1 }, svg)
     }

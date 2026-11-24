@@ -95,6 +95,12 @@
     el('rect', { x: 0, y: py(surface), width: W, height: py(0) - py(surface), fill: css('--water') }, svg)
     el('line', { x1: 0, x2: W, y1: py(surface), y2: py(surface), stroke: css('--water-edge'), 'stroke-width': 2 }, svg)
     el('rect', { x: 0, y: py(0), width: W, height: H - py(0), fill: css('--seabed') }, svg)
+    // the rig, to scale and behind everything else; what doesn't fit is cut off at the top
+    if (bow.rig) {
+      const g = el('g', { fill: 'none', stroke: css('--muted'), 'stroke-width': 1.3, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg)
+      for (const line of bow.rig.lines) el('polyline', { points: ptsToScale(line) }, g)
+      for (const c of bow.rig.circles) el('circle', { cx: px(c.x), cy: waterline - (c.y - surface) * sx, r: Math.max(1.5, c.r * sx) }, g)
+    }
     if (fin(tide)) {
       const cd = surface - tide
       el('line', { x1: 0, x2: W, y1: py(cd), y2: py(cd), stroke: css('--datum'), 'stroke-dasharray': '6 5', 'stroke-width': 1.5 }, svg)

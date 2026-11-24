@@ -5,9 +5,9 @@
  *
  *   modern       a yacht bow: raked stem, fin keel cut off at the edge of the view
  *   doubleEnder  a traditional double-ender like the Norwegian rescue boats (Colin
- *                Archer type): the hull of the RS 21 Solli logo, drawn from her
- *                rigging drawing, without the rig and bowsprit; a pointed stern in
- *                the plan view
+ *                Archer type): the RS 21 Solli logo, drawn from her rigging drawing:
+ *                hull, masts and sails, without the bowsprit and the jib set on it;
+ *                a pointed stern in the plan view
  */
 window.Bow = (function () {
   // The RS 21 Solli logo's hull, bow to the right, in the logo's units (y down).
@@ -22,7 +22,17 @@ window.Bow = (function () {
       'M 322 2414 C 334 2452 342 2510 343 2570 C 344 2586 352 2598 370 2601 L 478 2601', // rudder
       'M 330 2408 L 330 2396 L 362 2394 L 362 2406', // stern rail
       'M 372 2416 C 900 2480 1750 2420 2286 2320' // sheer strake
-    ]
+    ],
+    rig: [
+      'M 1484 270 L 1536 2352', 'M 1501 270 L 1577 2351', // mainmast
+      'M 628 1302 L 621 2380', 'M 649 1302 L 645 2379', // mizzen mast
+      'M 962 606 L 1520 1185', 'M 1487 270 L 962 606', // gaff, topsail
+      'M 962 606 C 890 1010 800 1560 745 1900 C 725 2000 710 2080 701 2134', // mainsail leech
+      'M 701 2134 L 1532 2196', // main boom
+      'M 337 1363 L 622 1678', 'M 337 1363 C 275 1570 190 1935 118 2166', 'M 118 2166 L 622 2233', // mizzen sail
+      'M 1527 992 L 2292 2282', 'M 1620 1155 L 1564 1974', 'M 1572 2217 L 2292 2282' // staysail, to the stem head
+    ],
+    caps: [[1490, 252, 10], [641, 1290, 10]] // mast heads
   }
 
   // Points along an SVG path of absolute M, L, C and Z commands
@@ -72,6 +82,7 @@ window.Bow = (function () {
 
   const logoHull = sample(LOGO.hull)
   const logoLines = LOGO.lines.map(d => sample(d))
+  const logoRig = LOGO.rig.map(d => sample(d))
 
   /*
    * Side view.
@@ -79,7 +90,8 @@ window.Bow = (function () {
    *   surface   height of the waterline above the seabed
    *   extent    how much of a modern hull to show, from the stem aft, m
    *   length    the boat's length, m (optional)
-   * Returns { hull: [[x, y], ...] polygon, lines: [[[x, y], ...], ...], length }
+   * Returns { hull: [[x, y], ...] polygon, lines: [[[x, y], ...], ...], length,
+   *           rig: { lines, circles: [{ x, y, r }] } or null }
    */
   function side (style, { x, y, surface, extent, length }) {
     if (style === 'doubleEnder') {
@@ -87,14 +99,21 @@ window.Bow = (function () {
       const s = L / LOGO.length
       // mirrored so the bow faces the anchor, with the stem head on the roller
       const map = ([u, v]) => [x + (LOGO.stemHead[0] - u) * s, y - (v - LOGO.stemHead[1]) * s]
-      return { hull: logoHull.map(map), lines: logoLines.map(l => l.map(map)), length: L }
+      const circle = ([u, v, r]) => { const [cx, cy] = map([u, v]); return { x: cx, y: cy, r: r * s } }
+      return {
+        hull: logoHull.map(map),
+        lines: logoLines.map(l => l.map(map)),
+        length: L,
+        rig: { lines: logoRig.map(l => l.map(map)), circles: LOGO.caps.map(circle) }
+      }
     }
     const deck = y + 0.3
     const keel = Math.max(surface - 1.5, 0.3)
     return {
       hull: [[x, y], [x + 0.3, deck], [x + extent, deck + 0.2], [x + extent, keel], [x + extent * 0.35, keel], [x + 0.6, surface - 0.3]],
       lines: [],
-      length: extent
+      length: extent,
+      rig: null
     }
   }
 
