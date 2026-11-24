@@ -12,6 +12,8 @@ const { rollerToAnchor, offset } = require('./lib/geometry')
 const OUT = 'navigation.anchor.catenary'
 const NOTIFICATION = 'notifications.navigation.anchor.catenary'
 
+const WEBAPP = '/signalk-anchor-catenary'
+
 module.exports = function (app) {
   const plugin = {
     id: 'signalk-anchor-catenary',
@@ -25,6 +27,7 @@ module.exports = function (app) {
   let last = null // last computed state, served to the webapp
   let lastNotification = null
   let lastStatus
+  let running = false
 
   plugin.schema = {
     type: 'object',
@@ -70,7 +73,14 @@ module.exports = function (app) {
       rodePath: { type: 'string', title: 'Rode length path', description: 'Chain out, from a chain counter. If there is none, enter the length in the webapp', default: 'navigation.anchor.rodeLength' },
       maxAge: { type: 'number', title: 'Ignore position, heading and depth older than (s)', default: 60 },
       interval: { type: 'number', title: 'Update interval (s)', default: 2 },
-      notify: { type: 'boolean', title: 'Notify when the chain lifts the anchor or the inputs disagree', default: true }
+      notify: { type: 'boolean', title: 'Notify when the chain lifts the anchor or the inputs disagree', default: true },
+      bowStyle: {
+        type: 'string',
+        title: 'Bow drawn in the webapp',
+        enum: ['modern', 'doubleEnder'],
+        enumNames: ['Modern yacht', 'Traditional double-ender with bowsprit (Colin Archer type, like the Norwegian rescue boats)'],
+        default: 'modern'
+      }
     }
   }
 
@@ -110,6 +120,11 @@ module.exports = function (app) {
     return undefined
   }
 
+  function draft () {
+    const d = read('design.draft')
+    return num(d && typeof d === 'object' ? (d.maximum !== undefined ? d.maximum : d.current) : d)
+  }
+
   function heading () {
     const maxAge = options.maxAge
     const t = num(read('navigation.headingTrue', maxAge))
@@ -127,6 +142,7 @@ module.exports = function (app) {
     return {
       boatLength: num(length && typeof length === 'object' ? length.overall : length),
       boatBeam: num(read('design.beam')),
+      boatDraft: draft(),
       anchor: read('navigation.anchor.position'),
       antenna: read('navigation.position', options.maxAge),
       heading: heading(),
@@ -322,7 +338,7 @@ module.exports = function (app) {
   }
 
   function publicSettings () {
-    return { chainWeight: options.chainWeight, depthMode: options.depthMode || 'auto', tidePath: options.tidePath, rodePath: options.rodePath, snubberLength: num(options.snubberLength) }
+    return { chainWeight: options.chainWeight, depthMode: options.depthMode || 'auto', tidePath: options.tidePath, rodePath: options.rodePath, snubberLength: num(options.snubberLength), bowStyle: options.bowStyle || 'modern' }
   }
 
   // ------------------------------------------------------------- output
@@ -424,44 +440,31 @@ module.exports = function (app) {
 
   // --------------------------------------------------------------- router
 
-  plugin.registerWithRouter = function (router) {
-    // Signal K 2.37 and later lets a plugin open its routes to users who are not
-    // admins: reading to any logged-in user, setting values to read/write users.
-    // Older servers keep all plugin routes admin-only.
-    const read = typeof router.access === 'function' ? router.access('readonly') : router
-    const write = typeof router.access === 'function' ? router.access('readwrite') : router
-
-    // The server usually parses JSON bodies already; parse here if it didn't
-    router.use((req, res, next) => {
-      if (req.method !== 'POST' || req.body !== undefined) return next()
-      let raw = ''
-      req.on('data', c => { raw += c })
-      req.on('end', () => {
-        try { req.body = raw ? JSON.parse(raw) : {} } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }) }
-        next()
-      })
-    })
-    read.get('/state', (req, res) => res.json(last || { missing: ['plugin not running'] }))
+  // The handlers, shared by the plugin's own routes and the app-path API below
+  const handlers = {
+    state (req, res) {
+      res.json(last || { missing: ['plugin not running'] })
+    },
 
     // { length: m } or { length: null } to clear
-    write.post('/rode', (req, res) => {
+    rode (req, res) {
       const v = req.body && req.body.length
       if (v !== null && !(Number.isFinite(v) && v >= 0)) return res.status(400).json({ error: 'length must be a number of metres or null' })
       store.manualRode = v === null ? undefined : v
       save(); compute(); res.json(last)
-    })
+    },
 
     // { depth: m } charted depth at the anchor below chart datum, or null to clear
-    write.post('/seabed', (req, res) => {
+    seabed (req, res) {
       const v = req.body && req.body.depth
       if (v !== null && !Number.isFinite(v)) return res.status(400).json({ error: 'depth must be a number of metres or null' })
       store.manualDatumDepth = v === null ? undefined : v
       save(); compute(); res.json(last)
-    })
+    },
 
     // { on: true, loop: m } hooks the snubber on, with `loop` metres of chain let out
     // after hooking on; { on: false } takes it off
-    write.post('/snubber', (req, res) => {
+    snubber (req, res) {
       const b = req.body || {}
       if (b.on === false) {
         store.snubber = undefined
@@ -478,15 +481,85 @@ module.exports = function (app) {
       if (hooked.length && hooked[hooked.length - 1].kind !== 'chain') return res.status(400).json({ error: 'The hook would be on the rope: let out less after hooking on, or hook the snubber on the chain' })
       store.snubber = { hookAt: rodeOut - loop, time: new Date().toISOString() }
       save(); compute(); res.json(last)
-    })
+    },
 
     // Take the current depth and tide as the depth at the anchor
-    write.post('/record', (req, res) => {
+    record (req, res) {
       const inputs = gather()
       if (inputs.depth === undefined) return res.status(409).json({ error: 'No live depth' })
       store.record = { anchor: inputs.anchor, time: new Date().toISOString(), depth: inputs.depth, tide: inputs.tide }
       save(); compute(); res.json(last)
+    }
+  }
+  const SETTERS = ['rode', 'seabed', 'snubber', 'record']
+
+  // Parse a JSON body if the server hasn't already
+  function jsonBody (req, res, next) {
+    if (req.method !== 'POST' || req.body !== undefined) return next()
+    let raw = ''
+    req.on('data', c => { raw += c })
+    req.on('end', () => {
+      try { req.body = raw ? JSON.parse(raw) : {} } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }) }
+      next()
     })
+  }
+
+  plugin.registerWithRouter = function (router) {
+    // Signal K 2.37 and later lets a plugin open its routes to users who are not
+    // admins: reading to any logged-in user, setting values to read/write users.
+    // Older servers keep all plugin routes admin-only.
+    const read = typeof router.access === 'function' ? router.access('readonly') : router
+    const write = typeof router.access === 'function' ? router.access('readwrite') : router
+    router.use(jsonBody)
+    read.get('/state', handlers.state)
+    for (const name of SETTERS) write.post('/' + name, handlers[name])
+  }
+
+  /*
+   * The same API under the webapp's own path, /signalk-anchor-catenary/api/.
+   * Devices that show the webapp without a login of their own, such as B&G/Simrad/
+   * Lowrance MFDs through signalk-navico-embedder (which forwards only an app's own
+   * paths and /signalk), read with a read-only token or with the server's Allow
+   * Read-Only Access. Plugin routes accept neither before Signal K 2.37, and only
+   * a logged-in user after. These routes sit outside the server's plugin route
+   * guard, so they apply the rules themselves from what the server has already
+   * worked out for the request: reading as for /signalk (any login, or anyone when
+   * the server allows read-only access), setting values with a read/write or admin
+   * login.
+   */
+  function access (req) {
+    const security = app.securityStrategy
+    if (!security || (typeof security.isDummy === 'function' && security.isDummy())) return 'write'
+    const p = req.skIsAuthenticated ? req.skPrincipal : undefined
+    if (p && (p.permissions === 'admin' || p.permissions === 'readwrite')) return 'write'
+    if (p) return 'read'
+    if (typeof security.allowReadOnly === 'function' && security.allowReadOnly()) return 'read'
+    return 'none'
+  }
+
+  const guard = level => (req, res, next) => {
+    if (!running) return res.status(503).json({ error: 'The anchor catenary plugin is not running' })
+    const a = access(req)
+    if (a === 'write' || (level === 'read' && a === 'read')) return next()
+    res.status(a === 'none' ? 401 : 403).json({ error: a === 'none' ? 'Log in first' : 'Read/write access needed' })
+  }
+
+  // Values are only set from JSON, which a form on another web site can't send
+  function requireJson (req, res, next) {
+    if (typeof req.is === 'function' ? req.is('application/json') : /^application\/json/.test(req.headers['content-type'] || '')) return next()
+    res.status(415).json({ error: 'Send JSON (Content-Type: application/json)' })
+  }
+
+  let appRoutesMounted = false
+  function mountAppRoutes () {
+    if (appRoutesMounted || typeof app.get !== 'function' || typeof app.post !== 'function') return
+    try {
+      app.get(`${WEBAPP}/api/state`, guard('read'), handlers.state)
+      for (const name of SETTERS) app.post(`${WEBAPP}/api/${name}`, guard('write'), requireJson, jsonBody, handlers[name])
+      appRoutesMounted = true
+    } catch (e) {
+      app.error(`Could not add the API under ${WEBAPP}/api: ${e.message}`)
+    }
   }
 
   // ------------------------------------------- chart plotter extension
@@ -494,8 +567,6 @@ module.exports = function (app) {
   // Screen widgets and a toolbar button for chart plotters that read the
   // plotterExtensions resource type, such as Freeboard-SK. The pages are served
   // with the webapp, from public/.
-  const WEBAPP = '/signalk-anchor-catenary'
-  let running = false
   let providerRegistered = false
 
   function manifest () {
@@ -555,6 +626,7 @@ module.exports = function (app) {
     options = Object.assign({}, defaults(), props)
     running = true
     registerPlotterExtension()
+    mountAppRoutes()
     load()
     sendMeta()
     compute()

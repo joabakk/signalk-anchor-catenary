@@ -1,6 +1,9 @@
 /* Anchor catenary webapp: polls the plugin and draws the rode. */
 (function () {
-  const API = '/plugins/signalk-anchor-catenary'
+  // The API under the webapp's own path (it also passes MFD proxies such as
+  // signalk-navico-embedder); the plugin route on servers where that's missing
+  const APIS = ['api', '/plugins/signalk-anchor-catenary']
+  let api = 0
   const NS = 'http://www.w3.org/2000/svg'
   const $ = id => document.getElementById(id)
   const DEG = 180 / Math.PI
@@ -64,9 +67,10 @@
     const surface = depth
     const tide = state.inputs.tide
     const bowExtent = Math.max(4, Math.min(12, (state.inputs.boatLength || 10) * 0.5))
+    const bow = Bow.side(state.settings.bowStyle, { x: X, y: rollerH, surface, extent: bowExtent, draft: state.inputs.boatDraft, length: state.inputs.boatLength })
     const xMax = Math.max(r.span, X, fin(r.liftSpan) ? Math.min(r.liftSpan, r.span * 1.6) : 0) + bowExtent
     // at least 30 m wide, so the boat doesn't fill the view when it lies over the anchor
-    const xMin = Math.min(-Math.max(3, r.span * 0.06), xMax - 30)
+    const xMin = Math.min(-Math.max(3, r.span * 0.06), xMax - 30, bow.sprit ? bow.sprit[1][0] - 1 : 0)
     const yMax = Math.max(rollerH, surface) + 1
     // draw in screen pixels so text stays readable on a phone; height fits the content
     const W = Math.round(Math.max(320, Math.min(1000, svg.clientWidth || 1000)))
@@ -101,12 +105,11 @@
     }
 
     // bow
-    const deckY = rollerH + 0.3
-    const keelY = Math.max(surface - 1.5, 0.3)
-    el('polygon', {
-      points: pts([[X, rollerH], [X + 0.3, deckY], [X + bowExtent, deckY + 0.2], [X + bowExtent, keelY], [X + bowExtent * 0.35, keelY], [X + 0.6, surface - 0.3]]),
-      fill: css('--boat'), stroke: css('--boat-edge'), 'stroke-width': 2, 'stroke-linejoin': 'round'
-    }, svg)
+    el('polygon', { points: pts(bow.hull), fill: css('--boat'), stroke: css('--boat-edge'), 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg)
+    if (bow.sprit) {
+      el('polyline', { points: pts(bow.bobstay), fill: 'none', stroke: css('--boat-edge'), 'stroke-width': 1.2 }, svg)
+      el('polyline', { points: pts(bow.sprit), fill: 'none', stroke: css('--boat-edge'), 'stroke-width': 4, 'stroke-linecap': 'round' }, svg)
+    }
     el('circle', { cx: px(X), cy: py(rollerH), r: 5, fill: css('--accent') }, svg)
 
     // rode, section by section
@@ -168,7 +171,9 @@
     }
 
     // dimensions
-    el('text', { x: px(X) - 10, y: Math.max(32, py(rollerH) - 8), 'text-anchor': 'end' }, svg, `${deg(r.rollerAngle)} at ${sn.loaded ? 'snubber' : 'roller'}`)
+    // clear of the bowsprit, if there is one
+    const labelX = bow.sprit ? Math.min(px(X), px(bow.sprit[1][0])) : px(X)
+    el('text', { x: labelX - 10, y: Math.max(32, py(rollerH) - 8), 'text-anchor': 'end' }, svg, `${deg(r.rollerAngle)} at ${sn.loaded ? 'snubber' : 'roller'}`)
     el('text', { x: W / 2, y: py(0) + 37, 'text-anchor': 'middle' }, svg, `${r.span.toFixed(1)} m to anchor · ${depth.toFixed(1)} m deep`)
   }
 
@@ -201,14 +206,15 @@
     // hull, bow at the roller
     const hdg = s.inputs.heading || 0
     const fwd = s.inputs.rollerForward
-    const outline = [[0, 0], [-0.25 * L, B / 2], [-0.7 * L, B / 2], [-L, B * 0.4], [-L, -B * 0.4], [-0.7 * L, -B / 2], [-0.25 * L, -B / 2]]
-      .map(([f, st]) => {
-        f += fwd; st += s.inputs.rollerStarboard
-        const e = ant.e + f * Math.sin(hdg) + st * Math.cos(hdg)
-        const n = ant.n + f * Math.cos(hdg) - st * Math.sin(hdg)
-        return `${X(e).toFixed(1)},${Y(n).toFixed(1)}`
-      }).join(' ')
-    el('polygon', { points: outline, fill: css('--boat'), stroke: css('--boat-edge'), 'stroke-width': 1.5 }, svg)
+    const shape = Bow.plan(s.settings.bowStyle, L, B)
+    const toScreen = list => list.map(([f, st]) => {
+      f += fwd; st += s.inputs.rollerStarboard
+      const e = ant.e + f * Math.sin(hdg) + st * Math.cos(hdg)
+      const n = ant.n + f * Math.cos(hdg) - st * Math.sin(hdg)
+      return `${X(e).toFixed(1)},${Y(n).toFixed(1)}`
+    }).join(' ')
+    el('polygon', { points: toScreen(shape.outline), fill: css('--boat'), stroke: css('--boat-edge'), 'stroke-width': 1.5 }, svg)
+    if (shape.sprit) el('polyline', { points: toScreen(shape.sprit), stroke: css('--boat-edge'), 'stroke-width': 2 }, svg)
 
     // chain line: solid where it hangs, brown where it lies
     const tdFrac = r.state === 'catenary' ? r.touchdown / r.span : 0
@@ -330,8 +336,10 @@
 
   async function poll () {
     try {
-      const res = await fetch(API + '/state', { credentials: 'include' })
-      if (!res.ok) throw new Error(res.status === 404 ? 'Plugin not enabled' : `HTTP ${res.status}`)
+      const res = await fetch(APIS[api] + '/state', { credentials: 'include' })
+      if (res.status === 404 && api === 0) { api = 1; return poll() }
+      if (res.status === 401 || res.status === 403) throw new Error('log in to the server first')
+      if (!res.ok) throw new Error(res.status === 404 || res.status === 503 ? 'Plugin not enabled' : `HTTP ${res.status}`)
       state = await res.json()
       showError()
       draw()
@@ -342,7 +350,7 @@
 
   async function post (p, body) {
     try {
-      const res = await fetch(API + p, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+      const res = await fetch(APIS[api] + p, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(j.error || (res.status === 401 || res.status === 403 ? 'log in to the server first' : `HTTP ${res.status}`))
       state = j; showError(); draw()

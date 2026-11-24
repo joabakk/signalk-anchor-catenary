@@ -87,6 +87,7 @@ The record is kept when the server restarts and cleared when the anchor position
 | Chain weight | setting | kg/m in air, for an all-chain rode |
 | Rode sections | setting | material, length and kg/m in air of each section, from the anchor |
 | Snubber | setting | length, material, kg/m, and where it is made fast; hooked on from the webapp |
+| Boat | `design.length`, `design.beam`, `design.draft` | for drawing; and a setting for the bow: modern yacht, or traditional double-ender with bowsprit |
 
 Position, heading and depth older than 60 s (configurable) are ignored.
 
@@ -120,6 +121,22 @@ Open **Anchor Catenary** from the server's Webapps menu, or go to `http://<serve
 Setting values from the webapp needs a logged-in user if the server has security turned on. On Signal K server 2.37 and later,
 any logged-in user can read the webapp and read/write users can set values; older servers allow only admins.
 
+## On B&G, Simrad and Lowrance MFDs
+
+The webapp works on Navico chart plotters through
+[signalk-navico-embedder](https://www.npmjs.com/package/signalk-navico-embedder), which shows Signal K web apps as tiles on
+the MFD. Install that plugin, open its settings and enable **Anchor Catenary** in its app list.
+
+- The MFD has no login of its own. Either turn on **Allow Read-Only Access** under **Security** in the Signal K admin, or
+  give the embedder a token (its **Generate Authentication Token** button). With a read-only token or read-only access the
+  MFD shows the rode; to set the rode out, the snubber or the charted depth from the MFD, the token needs read/write.
+- The webapp follows the MFD's day and night mode (`?mode=day` / `?mode=night` in the page address).
+- The plugin serves its API under the webapp's own path, `/signalk-anchor-catenary/api/`, as well as under `/plugins/`, so
+  it is reachable through the embedder's proxy and readable with read-only access on any server version.
+- The MFD's browser is Chromium 69; the webapp avoids the newer browser features the embedder can't rewrite.
+
+Tested through signalk-navico-embedder 1.8.0's proxy on Signal K 2.37, not yet on an MFD.
+
 ## Freeboard-SK widgets
 
 With [Freeboard-SK](https://www.npmjs.com/package/@signalk/freeboard-sk) 3.5 or later the plugin adds, through its
@@ -141,7 +158,8 @@ http://localhost:3000/widgets.
 
 ## REST API
 
-Under `/plugins/signalk-anchor-catenary`:
+Under `/plugins/signalk-anchor-catenary`, and the same under `/signalk-anchor-catenary/api` (POSTs there must be sent as
+`application/json`):
 
 | | |
 |---|---|

@@ -7,7 +7,9 @@
  *   status         state, rode on the bottom and margin to lift-off (1x1)
  */
 (function () {
-  const API = '/plugins/signalk-anchor-catenary/state'
+  // the API under the webapp's path, else the plugin route on servers without it
+  const APIS = ['api/state', '/plugins/signalk-anchor-catenary/state']
+  let api = 0
   const NS = 'http://www.w3.org/2000/svg'
   const G = 9.80665
   const card = document.getElementById('card')
@@ -62,10 +64,11 @@
     const depth = state.depth.value
     const rollerX = sn.loaded ? sn.rollerX : r.span
     const rollerY = sn.loaded ? sn.rollerY : r.height
-    const bow = Math.max(2, r.span * 0.08)
+    const bowExtent = Math.max(2, r.span * 0.08)
+    const bow = Bow.side(state.settings && state.settings.bowStyle, { x: rollerX, y: rollerY, surface: depth, extent: bowExtent, draft: state.inputs.boatDraft, length: state.inputs.boatLength })
     const showLift = fin(r.liftSpan) && r.liftSpan > 0 && r.liftSpan < r.span * 1.5
-    const xMin = -Math.max(1, r.span * 0.04)
-    const xMax = Math.max(r.span, rollerX, showLift ? r.liftSpan : 0) + bow
+    const xMin = Math.min(-Math.max(1, r.span * 0.04), bow.sprit ? bow.sprit[1][0] - 0.5 : 0)
+    const xMax = Math.max(r.span, rollerX, showLift ? r.liftSpan : 0) + bowExtent
     const yMax = Math.max(rollerY, depth) + 0.6
     const bottom = 5
     // fitted to the box: the vertical scale is exaggerated, as in a chart profile
@@ -83,10 +86,11 @@
     }
 
     // bow
-    el('polygon', {
-      points: pts([[rollerX, rollerY], [rollerX + bow, rollerY + 0.2], [rollerX + bow, Math.max(depth - 1.2, 0.2)], [rollerX + bow * 0.4, Math.max(depth - 1.2, 0.2)]]),
-      fill: css('--line'), stroke: css('--muted'), 'stroke-width': 1
-    }, svg)
+    el('polygon', { points: pts(bow.hull), fill: css('--line'), stroke: css('--muted'), 'stroke-width': 1, 'stroke-linejoin': 'round' }, svg)
+    if (bow.sprit) {
+      el('polyline', { points: pts(bow.bobstay), fill: 'none', stroke: css('--muted'), 'stroke-width': 0.8 }, svg)
+      el('polyline', { points: pts(bow.sprit), fill: 'none', stroke: css('--muted'), 'stroke-width': 2, 'stroke-linecap': 'round' }, svg)
+    }
 
     const colour = kind => css(kind === 'rope' ? '--rope' : kind === 'snubber' ? '--snubber' : '--chain')
     const override = r.state === 'lifting' ? css('--alarm') : r.state === 'taut' ? css('--warn') : null
@@ -164,7 +168,8 @@
 
   async function poll () {
     try {
-      const res = await fetch(API, { credentials: 'include' })
+      const res = await fetch(APIS[api], { credentials: 'include' })
+      if (res.status === 404 && api === 0) { api = 1; return poll() }
       if (res.status === 401 || res.status === 403) throw new Error('Log in to see the rode')
       if (res.status === 404) throw new Error('Anchor catenary plugin is not enabled')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)

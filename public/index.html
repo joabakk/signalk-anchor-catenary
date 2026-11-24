@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Anchor Catenary</title>
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Day or night from the page address, as B&G/Simrad/Lowrance MFDs pass it (?mode=day / ?mode=night)
+    (function () {
+      var m = /[?&]mode=(day|night)\b/.exec(location.search)
+      if (m) document.documentElement.setAttribute('data-theme', m[1] === 'night' ? 'night' : 'light')
+    })()
+  </script>
 </head>
 <body>
   <header>
@@ -72,6 +79,7 @@
   </main>
 
   <script src="bus.js"></script>
+  <script src="bow.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -304,6 +304,64 @@ test('routes: reading open to logged-in users, setting values to read/write user
   t.plugin.stop()
 })
 
+test('API under the webapp path, for MFD proxies: same access rules as the server', async () => {
+  const t = setup({ 'navigation.position': ANTENNA, 'navigation.anchor.position': move(ANTENNA, 0, 25), 'environment.depth.belowSurface': 5 })
+  t.plugin.stop()
+  const routes = {}
+  let security = { isDummy: () => true }
+  const app = Object.assign({}, t.app, {
+    get (p, ...h) { routes['GET ' + p] = h },
+    post (p, ...h) { routes['POST ' + p] = h }
+  })
+  Object.defineProperty(app, 'securityStrategy', { get: () => security })
+  const plugin = require('../index')(app)
+  plugin.start({ interval: 3600 })
+  assert.deepStrictEqual(Object.keys(routes).sort(), [
+    'GET /signalk-anchor-catenary/api/state',
+    'POST /signalk-anchor-catenary/api/record',
+    'POST /signalk-anchor-catenary/api/rode',
+    'POST /signalk-anchor-catenary/api/seabed',
+    'POST /signalk-anchor-catenary/api/snubber'
+  ])
+  // run a route's middleware chain like express does
+  const call = (key, req) => new Promise(resolve => {
+    const chain = routes[key]
+    const res = { code: 200, status (c) { this.code = c; return this }, json (j) { resolve({ code: this.code, body: j }) } }
+    req = Object.assign({ method: key.split(' ')[0], headers: {} }, req)
+    const next = i => () => chain[i](req, res, next(i + 1))
+    next(0)()
+  })
+  const json = { 'content-type': 'application/json' }
+  const STATE = 'GET /signalk-anchor-catenary/api/state'
+  const RODE = 'POST /signalk-anchor-catenary/api/rode'
+
+  // security off: everything goes
+  assert.strictEqual((await call(STATE, {})).code, 200)
+  assert.strictEqual((await call(RODE, { headers: json, body: { length: 30 } })).body.inputs.rode, 30)
+  assert.strictEqual((await call(RODE, { headers: { 'content-type': 'text/plain' }, body: { length: 31 } })).code, 415, 'JSON only')
+
+  // security on, no login
+  let readOnly = false
+  security = { isDummy: () => false, allowReadOnly: () => readOnly }
+  assert.strictEqual((await call(STATE, {})).code, 401)
+  readOnly = true
+  assert.strictEqual((await call(STATE, {})).code, 200, 'anonymous read when the server allows read-only access')
+  assert.strictEqual((await call(RODE, { headers: json, body: { length: 32 } })).code, 403)
+
+  // logged in
+  readOnly = false
+  const as = permissions => ({ skIsAuthenticated: true, skPrincipal: { identifier: 'u', permissions } })
+  assert.strictEqual((await call(STATE, as('readonly'))).code, 200)
+  assert.strictEqual((await call(RODE, Object.assign(as('readonly'), { headers: json, body: { length: 33 } }))).code, 403)
+  assert.strictEqual((await call(RODE, Object.assign(as('readwrite'), { headers: json, body: { length: 34 } }))).body.inputs.rode, 34)
+  assert.strictEqual((await call(RODE, Object.assign(as('admin'), { headers: json, body: { length: 35 } }))).body.inputs.rode, 35)
+  assert.strictEqual((await call(STATE, { skIsAuthenticated: false, skPrincipal: { permissions: 'admin' } })).code, 401, 'principal without authentication counts for nothing')
+
+  // plugin stopped: the routes stay in express but answer 503
+  plugin.stop()
+  assert.strictEqual((await call(STATE, as('admin'))).code, 503)
+})
+
 ;(async () => {
   let failed = 0
   for (const t of tests) {

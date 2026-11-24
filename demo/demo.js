@@ -18,7 +18,8 @@ const { move } = require('../lib/geometry')
 
 const PORT = Number(process.env.PORT) || 3000
 const PUBLIC = path.join(__dirname, '..', 'public')
-const PREFIX = '/plugins/signalk-anchor-catenary'
+// the plugin's routes, and the same API under the webapp path (api/ relative to the page)
+const PREFIXES = ['/plugins/signalk-anchor-catenary', '/signalk-anchor-catenary/api', '/api']
 const ANCHOR = { latitude: 59.9, longitude: 10.7 }
 
 // --------------------------------------------------- mock Signal K server
@@ -39,8 +40,10 @@ app.getDataDirPath = () => dataDir
 set('navigation.anchor.position', ANCHOR)
 set('environment.depth.belowSurface', 7)
 set('environment.tide.heightNow', 1.2)
-set('design.length', { overall: 11 })
-set('design.beam', 3.6)
+// a traditional double-ender, rescue-boat size
+set('design.length', { overall: 14 })
+set('design.beam', 4.6)
+set('design.draft', { maximum: 2.2 })
 
 // ------------------------------------------------------------ the boat
 
@@ -66,7 +69,8 @@ plugin.start({
   rodeSections: [{ material: 'chain', length: 50, weight: 2.2 }, { material: 'nylon', weight: 0.17 }],
   snubberLength: 6,
   snubberAft: 0.4,
-  snubberHeight: 0.4
+  snubberHeight: 0.4,
+  bowStyle: 'doubleEnder'
 })
 setInterval(simulate, 1000)
 
@@ -84,8 +88,9 @@ const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascrip
 
 http.createServer((req, res) => {
   const url = req.url.split('?')[0]
-  if (url.startsWith(PREFIX)) {
-    const handler = routes[req.method + ' ' + url.slice(PREFIX.length)]
+  const prefix = PREFIXES.find(p => url.startsWith(p + '/'))
+  if (prefix) {
+    const handler = routes[req.method + ' ' + url.slice(prefix.length)]
     if (!handler) { res.statusCode = 404; return res.end() }
     let raw = ''
     req.on('data', c => { raw += c })
