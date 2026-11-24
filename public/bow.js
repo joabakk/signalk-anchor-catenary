@@ -33,7 +33,12 @@ window.Bow = (function () {
       'M 118 2166 L 622 2233', 'M 622 2168 L 209 2068', // mizzen boom, lowered gaff
       'M 1527 992 L 2292 2282' // staysail stay
     ],
-    caps: [[1490, 252, 10], [641, 1290, 10]] // mast heads
+    caps: [[1490, 252, 10], [641, 1290, 10]], // mast heads
+    // furled sails, between each boom and its lowered gaff: [boom at mast, boom end, throat, peak]
+    furled: [
+      [[1532, 2196], [701, 2134], [1530, 2131], [739, 1988]],
+      [[622, 2233], [118, 2166], [622, 2168], [209, 2068]]
+    ]
   }
 
   // Points along an SVG path of absolute M, L, C and Z commands
@@ -86,13 +91,42 @@ window.Bow = (function () {
   const logoRig = LOGO.rig.map(d => sample(d))
 
   /*
+   * A sail furled on its boom under the lowered gaff: thickest at the mast,
+   * tapering aft, sagging a little between the ties. Returns the bundle's
+   * outline and the ties across it.
+   */
+  function furl ([boomA, boomB, gaffA, gaffB]) {
+    const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+    const start = 0.03
+    const end = 0.88
+    const ties = 4 // stretches between ties
+    const bottom = []
+    const top = []
+    const tieLines = []
+    for (let i = 0; i <= 48; i++) {
+      const t = start + (end - start) * i / 48
+      const b = lerp(boomA, boomB, t)
+      const g = lerp(gaffA, gaffB, t)
+      const taper = 1 - 0.55 * (t - start) / (end - start) // fuller at the mast
+      const stretch = ((t - start) / (end - start)) * ties
+      const sag = Math.sin(Math.PI * (stretch % 1)) ** 2 // bulges between ties
+      const k = 0.25 + 0.55 * taper + 0.12 * sag // share of the gap the bundle fills
+      bottom.push(lerp(b, g, 0.08))
+      top.push(lerp(b, g, Math.min(0.92, k)))
+      if (i > 0 && i < 48 && i % (48 / ties) === 0) tieLines.push([lerp(b, g, 0.02), lerp(b, g, Math.min(0.95, k + 0.04))])
+    }
+    return { outline: bottom.concat(top.reverse()), ties: tieLines }
+  }
+  const logoFurled = LOGO.furled.map(furl)
+
+  /*
    * Side view.
    *   x, y      the stem head, where the rode comes aboard (the roller)
    *   surface   height of the waterline above the seabed
    *   extent    how much of a modern hull to show, from the stem aft, m
    *   length    the boat's length, m (optional)
    * Returns { hull: [[x, y], ...] polygon, lines: [[[x, y], ...], ...], length,
-   *           rig: { lines, circles: [{ x, y, r }] } or null }
+   *           rig: { lines, circles: [{ x, y, r }], furled: [{ outline, ties }] } or null }
    */
   function side (style, { x, y, surface, extent, length }) {
     if (style === 'doubleEnder') {
@@ -105,7 +139,11 @@ window.Bow = (function () {
         hull: logoHull.map(map),
         lines: logoLines.map(l => l.map(map)),
         length: L,
-        rig: { lines: logoRig.map(l => l.map(map)), circles: LOGO.caps.map(circle) }
+        rig: {
+          lines: logoRig.map(l => l.map(map)),
+          circles: LOGO.caps.map(circle),
+          furled: logoFurled.map(f => ({ outline: f.outline.map(map), ties: f.ties.map(l => l.map(map)) }))
+        }
       }
     }
     const deck = y + 0.3

@@ -98,6 +98,10 @@
     // the rig, to scale and behind everything else; what doesn't fit is cut off at the top
     if (bow.rig) {
       const g = el('g', { fill: 'none', stroke: css('--muted'), 'stroke-width': 1.3, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg)
+      for (const f of bow.rig.furled) {
+        el('polygon', { points: ptsToScale(f.outline), fill: css('--boat'), 'stroke-width': 1 }, g)
+        for (const tie of f.ties) el('polyline', { points: ptsToScale(tie), 'stroke-width': 1 }, g)
+      }
       for (const line of bow.rig.lines) el('polyline', { points: ptsToScale(line) }, g)
       for (const c of bow.rig.circles) el('circle', { cx: px(c.x), cy: waterline - (c.y - surface) * sx, r: Math.max(1.5, c.r * sx) }, g)
     }
@@ -110,8 +114,11 @@
     // where the anchor would start to lift
     if (fin(r.liftSpan) && r.liftSpan > 0 && px(r.liftSpan) < W - 20) {
       el('line', { x1: px(r.liftSpan), x2: px(r.liftSpan), y1: 18, y2: py(0), stroke: css('--warn'), 'stroke-dasharray': '4 4', 'stroke-width': 1.5 }, svg)
-      const right = px(r.liftSpan) > W * 0.6
-      el('text', { x: px(r.liftSpan) + (right ? -6 : 6), y: 14, 'text-anchor': right ? 'end' : 'start', fill: css('--warn') }, svg, narrow ? `lifts at ${r.liftSpan.toFixed(0)} m` : `anchor lifts with ${sn.loaded ? 'snubber' : 'roller'} here (${r.liftSpan.toFixed(0)} m)`)
+      // on the anchor side of the line, and of the stem head when the rig is drawn,
+      // so the label stays clear of the masts and stays
+      const right = bow.rig ? true : px(r.liftSpan) > W * 0.6
+      const labelX = bow.rig ? Math.min(px(r.liftSpan), px(X)) : px(r.liftSpan)
+      el('text', { x: labelX + (right ? -6 : 6), y: 14, 'text-anchor': right ? 'end' : 'start', fill: css('--warn') }, svg, narrow ? `lifts at ${r.liftSpan.toFixed(0)} m` : `anchor lifts with ${sn.loaded ? 'snubber' : 'roller'} here (${r.liftSpan.toFixed(0)} m)`)
     }
 
     // bow

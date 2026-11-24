@@ -88,6 +88,7 @@
     // the rig, to scale, cut off at the top of the box
     if (bow.rig) {
       const g = el('g', { fill: 'none', stroke: css('--muted'), 'stroke-width': 0.8, 'stroke-linecap': 'round' }, svg)
+      for (const f of bow.rig.furled) el('polygon', { points: ptsToScale(f.outline), fill: css('--line'), 'stroke-width': 0.5 }, g)
       for (const line of bow.rig.lines) el('polyline', { points: ptsToScale(line) }, g)
     }
     if (showLift) {
