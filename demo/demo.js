@@ -40,10 +40,10 @@ app.getDataDirPath = () => dataDir
 set('navigation.anchor.position', ANCHOR)
 set('environment.depth.belowSurface', 7)
 set('environment.tide.heightNow', 1.2)
-// a traditional double-ender, rescue-boat size
-set('design.length', { overall: 14 })
-set('design.beam', 4.6)
-set('design.draft', { maximum: 2.2 })
+// a traditional double-ender: RS 21 Solli (Colin Archer, Larvik 1908)
+set('design.length', { overall: 14.35 })
+set('design.beam', 4.84)
+set('design.draft', { maximum: 2.4 })
 
 // ------------------------------------------------------------ the boat
 

@@ -111,7 +111,8 @@ Open **Anchor Catenary** from the server's Webapps menu, or go to `http://<serve
 
 - **Side view**: the rode from the anchor to the roller, each section in its own colour (heavier chain thicker), and the snubber with
   its hook and the slack loop of chain. Chain lying on the bottom is drawn brown. The dashed line marks where the roller (or snubber
-  fitting) would be when the anchor starts to lift. The vertical scale can be exaggerated.
+  fitting) would be when the anchor starts to lift. The water depth can be exaggerated; the boat and everything above the
+  waterline are drawn to scale.
 - **Plan view**: the boat and the rode from above. The ring shows how far the roller can go before the anchor lifts.
 - **Numbers** for everything above, with tensions in kgf and kN.
 - **Inputs**: enter the rode out if you have no chain counter, enter a charted depth, take the current depth as the depth at the
@@ -150,8 +151,8 @@ With [Freeboard-SK](https://www.npmjs.com/package/@signalk/freeboard-sk) 3.5 or 
 - an **Anchor catenary** button on Freeboard's extension toolbar, which opens the full webapp in a floating window.
 
 To place a widget, press and hold (or right-click) an empty spot in a corner of the chart, or at the middle of the top or bottom
-edge, and pick it from the list. The widgets and the window follow Freeboard's night mode. The side view in the widgets is
-stretched to fit, so its vertical scale is exaggerated.
+edge, and pick it from the list. The widgets and the window follow Freeboard's night mode. In the widgets' side view the
+water depth is stretched to fit; the boat is drawn to scale.
 
 The plugin must be enabled for the widgets to appear. To see them without Freeboard, run `npm run demo` and open
 http://localhost:3000/widgets.

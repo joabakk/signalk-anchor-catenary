@@ -70,14 +70,17 @@
     const xMin = -Math.max(1, r.span * 0.04)
     // a modern bow is cut off; the double-ender is shown whole
     const xMax = Math.max(r.span, rollerX, showLift ? r.liftSpan : 0) + (bow.lines.length ? bow.length * 0.6 : bowExtent)
-    const yMax = Math.max(rollerY, depth) + 0.6
     const bottom = 5
-    // fitted to the box: the vertical scale is exaggerated, as in a chart profile
+    // above the waterline drawn to scale; the depth fitted to the box, so exaggerated
     const sx = W / (xMax - xMin)
-    const sy = (H - bottom - 2) / yMax
+    const above = Math.max(rollerY - depth, 0) + 0.6
+    const waterline = 2 + above * sx
+    const sy = Math.max((H - bottom - waterline) / depth, sx * 0.25)
     const px = x => (x - xMin) * sx
-    const py = y => 2 + (yMax - y) * sy
+    const py = y => (y >= depth ? waterline - (y - depth) * sx : waterline + (depth - y) * sy)
     const pts = list => list.map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`).join(' ')
+    // the hull: to scale all through, also below the waterline
+    const ptsToScale = list => list.map(([x, y]) => `${px(x).toFixed(1)},${(waterline - (y - depth) * sx).toFixed(1)}`).join(' ')
 
     el('rect', { x: 0, y: py(depth), width: W, height: py(0) - py(depth), fill: css('--water') }, svg)
     el('line', { x1: 0, x2: W, y1: py(depth), y2: py(depth), stroke: css('--water-edge'), 'stroke-width': 1 }, svg)
@@ -87,8 +90,8 @@
     }
 
     // bow
-    el('polygon', { points: pts(bow.hull), fill: css('--line'), stroke: css('--muted'), 'stroke-width': 1, 'stroke-linejoin': 'round' }, svg)
-    for (const line of bow.lines) el('polyline', { points: pts(line), fill: 'none', stroke: css('--muted'), 'stroke-width': 0.8 }, svg)
+    el('polygon', { points: ptsToScale(bow.hull), fill: css('--line'), stroke: css('--muted'), 'stroke-width': 1, 'stroke-linejoin': 'round' }, svg)
+    for (const line of bow.lines) el('polyline', { points: ptsToScale(line), fill: 'none', stroke: css('--muted'), 'stroke-width': 0.8 }, svg)
 
     const colour = kind => css(kind === 'rope' ? '--rope' : kind === 'snubber' ? '--snubber' : '--chain')
     const override = r.state === 'lifting' ? css('--alarm') : r.state === 'taut' ? css('--warn') : null

@@ -71,7 +71,8 @@
     const xMax = Math.max(r.span, X, fin(r.liftSpan) ? Math.min(r.liftSpan, r.span * 1.6) : 0) + bow.length + 1
     // at least 30 m wide, so the boat doesn't fill the view when it lies over the anchor
     const xMin = Math.min(-Math.max(3, r.span * 0.06), xMax - 30)
-    const yMax = Math.max(rollerH, surface) + 1
+    // above the waterline everything is drawn to scale, below it the depth is exaggerated
+    const above = Math.max(rollerH - surface, fin(tide) ? -tide : 0, 0) + 1
     // draw in screen pixels so text stays readable on a phone; height fits the content
     const W = Math.round(Math.max(320, Math.min(1000, svg.clientWidth || 1000)))
     const narrow = W < 600
@@ -80,12 +81,15 @@
     const bottom = 46 // seabed band with two label rows
     const maxH = narrow ? W * 0.9 : 420
     const sx = (W - 2 * pad) / (xMax - xMin)
-    const sy = Math.min(sx * ex, (maxH - top - bottom) / yMax)
-    const H = Math.round(top + yMax * sy + bottom)
+    const sy = Math.min(sx * ex, Math.max((maxH - top - bottom - above * sx) / surface, sx * 0.25))
+    const waterline = top + above * sx
+    const H = Math.round(waterline + surface * sy + bottom)
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
     const px = x => pad + (x - xMin) * sx
-    const py = y => top + (yMax - y) * sy
+    const py = y => (y >= surface ? waterline - (y - surface) * sx : waterline + (surface - y) * sy)
     const pts = list => list.map(([x, y]) => `${px(x).toFixed(1)},${py(y).toFixed(1)}`).join(' ')
+    // the hull: to scale all through, also below the waterline
+    const ptsToScale = list => list.map(([x, y]) => `${px(x).toFixed(1)},${(waterline - (y - surface) * sx).toFixed(1)}`).join(' ')
 
     // water and seabed
     el('rect', { x: 0, y: py(surface), width: W, height: py(0) - py(surface), fill: css('--water') }, svg)
@@ -105,8 +109,8 @@
     }
 
     // bow
-    el('polygon', { points: pts(bow.hull), fill: css('--boat'), stroke: css('--boat-edge'), 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg)
-    for (const line of bow.lines) el('polyline', { points: pts(line), fill: 'none', stroke: css('--boat-edge'), 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg)
+    el('polygon', { points: ptsToScale(bow.hull), fill: css('--boat'), stroke: css('--boat-edge'), 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg)
+    for (const line of bow.lines) el('polyline', { points: ptsToScale(line), fill: 'none', stroke: css('--boat-edge'), 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg)
     el('circle', { cx: px(X), cy: py(rollerH), r: 5, fill: css('--accent') }, svg)
 
     // rode, section by section
