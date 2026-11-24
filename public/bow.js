@@ -34,7 +34,7 @@ window.Bow = (function () {
       'M 1527 992 L 2292 2282' // staysail stay
     ],
     caps: [[1490, 252, 10], [641, 1290, 10]], // mast heads
-    // furled sails, between each boom and its lowered gaff: [boom at mast, boom end, throat, peak]
+    // furled sails, laced to each lowered gaff above its boom: [boom at mast, boom end, throat, peak]
     furled: [
       [[1532, 2196], [701, 2134], [1530, 2131], [739, 1988]],
       [[622, 2233], [118, 2166], [622, 2168], [209, 2068]]
@@ -91,31 +91,32 @@ window.Bow = (function () {
   const logoRig = LOGO.rig.map(d => sample(d))
 
   /*
-   * A sail furled on its boom under the lowered gaff: thickest at the mast,
-   * tapering aft, sagging a little between the ties. Returns the bundle's
-   * outline and the ties across it.
+   * A gaff sail, lowered and furled: laced to the gaff, it hangs below it, deep
+   * enough at the mast to lie on the boom and thinner towards the peak, sagging
+   * a little between the ties around the gaff. Returns the bundle's outline and
+   * the ties.
    */
   function furl ([boomA, boomB, gaffA, gaffB]) {
     const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
     const start = 0.03
-    const end = 0.88
+    const end = 0.92
     const ties = 4 // stretches between ties
-    const bottom = []
     const top = []
+    const bottom = []
     const tieLines = []
     for (let i = 0; i <= 48; i++) {
       const t = start + (end - start) * i / 48
-      const b = lerp(boomA, boomB, t)
-      const g = lerp(gaffA, gaffB, t)
-      const taper = 1 - 0.55 * (t - start) / (end - start) // fuller at the mast
-      const stretch = ((t - start) / (end - start)) * ties
-      const sag = Math.sin(Math.PI * (stretch % 1)) ** 2 // bulges between ties
-      const k = 0.25 + 0.55 * taper + 0.12 * sag // share of the gap the bundle fills
-      bottom.push(lerp(b, g, 0.08))
-      top.push(lerp(b, g, Math.min(0.92, k)))
-      if (i > 0 && i < 48 && i % (48 / ties) === 0) tieLines.push([lerp(b, g, 0.02), lerp(b, g, Math.min(0.95, k + 0.04))])
+      const g = lerp(gaffA, gaffB, t) // on the gaff
+      const b = lerp(boomA, boomB, t) // the boom below it
+      const along = (t - start) / (end - start)
+      const sag = Math.sin(Math.PI * ((along * ties) % 1)) ** 2 // hangs lower between ties
+      // depth below the gaff, as a share of the gap down to the boom
+      const depth = Math.min(0.92, 0.88 - 0.6 * along + 0.1 * sag)
+      top.push(lerp(g, b, 0.03))
+      bottom.push(lerp(g, b, depth))
+      if (i > 0 && i < 48 && i % (48 / ties) === 0) tieLines.push([lerp(g, b, -0.04), lerp(g, b, depth - 0.02)])
     }
-    return { outline: bottom.concat(top.reverse()), ties: tieLines }
+    return { outline: top.concat(bottom.reverse()), ties: tieLines }
   }
   const logoFurled = LOGO.furled.map(furl)
 
