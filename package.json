@@ -7,7 +7,9 @@
     "index.js",
     "lib/",
     "public/",
+    "test/",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "docs/"
   ],
@@ -19,6 +21,8 @@
     "signalk-node-server-plugin",
     "signalk-webapp",
     "signalk-category-utility",
+    "signalk-category-chart-plotters",
+    "signalk-category-plotter-extensions",
     "anchor",
     "catenary",
     "chain",
@@ -39,8 +43,13 @@
   },
   "signalk": {
     "displayName": "Anchor Catenary",
+    "appIcon": "icon.png",
     "screenshots": [
       "docs/screenshot.png"
     ]
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/joabakk/signalk-anchor-catenary/issues"
+  },
+  "homepage": "https://github.com/joabakk/signalk-anchor-catenary#readme"
 }

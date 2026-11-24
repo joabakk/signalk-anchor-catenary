@@ -425,17 +425,21 @@ module.exports = function (app) {
 
   // ---------------------------------------------------------- persistence
 
+  // The plugin's data directory, or none: then the state is kept in memory only
   function storeFile () {
-    const dir = typeof app.getDataDirPath === 'function' ? app.getDataDirPath() : __dirname
-    return path.join(dir, 'state.json')
+    const dir = typeof app.getDataDirPath === 'function' ? app.getDataDirPath() : undefined
+    return typeof dir === 'string' && dir ? path.join(dir, 'state.json') : undefined
   }
 
   function load () {
-    try { store = JSON.parse(fs.readFileSync(storeFile(), 'utf8')) || {} } catch (e) { store = {} }
+    const file = storeFile()
+    try { store = (file && JSON.parse(fs.readFileSync(file, 'utf8'))) || {} } catch (e) { store = {} }
   }
 
   function save () {
-    try { fs.writeFileSync(storeFile(), JSON.stringify(store, null, 2)) } catch (e) { app.error(`Could not save state: ${e.message}`) }
+    const file = storeFile()
+    if (!file) return
+    try { fs.writeFileSync(file, JSON.stringify(store, null, 2)) } catch (e) { app.error(`Could not save state: ${e.message}`) }
   }
 
   // --------------------------------------------------------------- router

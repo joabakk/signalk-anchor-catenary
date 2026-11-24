@@ -1,0 +1,16 @@
+# Signal K's plugin CI: tests on Linux, macOS and Windows with current Node
+# versions, and the checks the App Store registry looks for.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin-ci:
+    uses: SignalK/signalk-server/.github/workflows/plugin-ci.yml@master
