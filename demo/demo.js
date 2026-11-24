@@ -4,6 +4,7 @@
  * gusts, and the tide falls slowly.
  *
  *   npm run demo            then open http://localhost:3000/
+ *                           and http://localhost:3000/widgets for the Freeboard-SK widgets
  *   PORT=8080 npm run demo  on another port
  *
  * The rode out, charted depth and snubber are set from the webapp, as on a boat
@@ -100,12 +101,12 @@ http.createServer((req, res) => {
     return
   }
   const name = path.basename(url) || 'index.html'
-  const file = path.join(PUBLIC, name === 'signalk-anchor-catenary' ? 'index.html' : name)
+  const file = name === 'widgets' ? path.join(__dirname, 'widgets.html') : path.join(PUBLIC, name === 'signalk-anchor-catenary' ? 'index.html' : name)
   fs.readFile(file, (e, b) => {
     if (e) { res.statusCode = 404; return res.end() }
     res.setHeader('content-type', TYPES[path.extname(file)] || 'application/octet-stream')
     res.end(b)
   })
-}).listen(PORT, () => console.log(`Anchor catenary demo on http://localhost:${PORT}/`))
+}).listen(PORT, () => console.log(`Anchor catenary demo on http://localhost:${PORT}/ (widgets: http://localhost:${PORT}/widgets)`))
 
 process.on('SIGINT', () => { plugin.stop(); process.exit(0) })

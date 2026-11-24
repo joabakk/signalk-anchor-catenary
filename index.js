@@ -425,6 +425,12 @@ module.exports = function (app) {
   // --------------------------------------------------------------- router
 
   plugin.registerWithRouter = function (router) {
+    // Signal K 2.37 and later lets a plugin open its routes to users who are not
+    // admins: reading to any logged-in user, setting values to read/write users.
+    // Older servers keep all plugin routes admin-only.
+    const read = typeof router.access === 'function' ? router.access('readonly') : router
+    const write = typeof router.access === 'function' ? router.access('readwrite') : router
+
     // The server usually parses JSON bodies already; parse here if it didn't
     router.use((req, res, next) => {
       if (req.method !== 'POST' || req.body !== undefined) return next()
@@ -435,10 +441,10 @@ module.exports = function (app) {
         next()
       })
     })
-    router.get('/state', (req, res) => res.json(last || { missing: ['plugin not running'] }))
+    read.get('/state', (req, res) => res.json(last || { missing: ['plugin not running'] }))
 
     // { length: m } or { length: null } to clear
-    router.post('/rode', (req, res) => {
+    write.post('/rode', (req, res) => {
       const v = req.body && req.body.length
       if (v !== null && !(Number.isFinite(v) && v >= 0)) return res.status(400).json({ error: 'length must be a number of metres or null' })
       store.manualRode = v === null ? undefined : v
@@ -446,7 +452,7 @@ module.exports = function (app) {
     })
 
     // { depth: m } charted depth at the anchor below chart datum, or null to clear
-    router.post('/seabed', (req, res) => {
+    write.post('/seabed', (req, res) => {
       const v = req.body && req.body.depth
       if (v !== null && !Number.isFinite(v)) return res.status(400).json({ error: 'depth must be a number of metres or null' })
       store.manualDatumDepth = v === null ? undefined : v
@@ -455,7 +461,7 @@ module.exports = function (app) {
 
     // { on: true, loop: m } hooks the snubber on, with `loop` metres of chain let out
     // after hooking on; { on: false } takes it off
-    router.post('/snubber', (req, res) => {
+    write.post('/snubber', (req, res) => {
       const b = req.body || {}
       if (b.on === false) {
         store.snubber = undefined
@@ -475,7 +481,7 @@ module.exports = function (app) {
     })
 
     // Take the current depth and tide as the depth at the anchor
-    router.post('/record', (req, res) => {
+    write.post('/record', (req, res) => {
       const inputs = gather()
       if (inputs.depth === undefined) return res.status(409).json({ error: 'No live depth' })
       store.record = { anchor: inputs.anchor, time: new Date().toISOString(), depth: inputs.depth, tide: inputs.tide }
@@ -483,10 +489,72 @@ module.exports = function (app) {
     })
   }
 
+  // ------------------------------------------- chart plotter extension
+
+  // Screen widgets and a toolbar button for chart plotters that read the
+  // plotterExtensions resource type, such as Freeboard-SK. The pages are served
+  // with the webapp, from public/.
+  const WEBAPP = '/signalk-anchor-catenary'
+  let running = false
+  let providerRegistered = false
+
+  function manifest () {
+    const widget = (id, title, size) => ({ id, title, type: 'iframe', url: `${WEBAPP}/widget.html?view=${id}`, size, lifecycle: 'whileEnabled' })
+    return {
+      name: 'Anchor Catenary',
+      description: 'The anchor rode as it lies now: rode on the bottom, margin before the anchor lifts, and the full side and plan views',
+      version: require('./package.json').version,
+      apiVersion: '1',
+      requires: ['widgets'],
+      optional: ['panels.iframe', 'buttons', 'windows', 'nightMode', 'display'],
+      widgets: [
+        widget('profile', 'Anchor rode: side view', '2x1'),
+        widget('profile-large', 'Anchor rode: side view and numbers', '2x2'),
+        widget('status', 'Anchor rode: status', '1x1')
+      ],
+      panels: [
+        { id: 'app', title: 'Anchor catenary', type: 'iframe', url: `${WEBAPP}/`, lifecycle: 'onOpen' }
+      ],
+      buttons: [
+        {
+          id: 'app',
+          title: 'Anchor catenary',
+          icon: 'anchor',
+          action: { type: 'toggleWindow', panel: 'app', geometry: { anchor: 'bottom-right', width: 760, height: 620 }, restoreKey: 'app' }
+        }
+      ]
+    }
+  }
+
+  function registerPlotterExtension () {
+    if (providerRegistered || typeof app.registerResourceProvider !== 'function') return
+    try {
+      app.registerResourceProvider({
+        type: 'plotterExtensions',
+        methods: {
+          listResources: async () => (running ? { [plugin.id]: manifest() } : {}),
+          getResource: async id => {
+            if (!running || id !== plugin.id) throw new Error(`No such plotterExtensions resource: ${id}`)
+            return manifest()
+          },
+          setResource: async () => { throw new Error(`${plugin.id} is read-only`) },
+          deleteResource: async () => { throw new Error(`${plugin.id} is read-only`) }
+        }
+      })
+      providerRegistered = true
+    } catch (e) {
+      app.error(`Could not register the chart plotter widgets: ${e.message}`)
+    }
+  }
+
+  plugin.manifest = manifest // for tests
+
   // ------------------------------------------------------------ lifecycle
 
   plugin.start = function (props) {
     options = Object.assign({}, defaults(), props)
+    running = true
+    registerPlotterExtension()
     load()
     sendMeta()
     compute()
@@ -496,6 +564,7 @@ module.exports = function (app) {
   }
 
   plugin.stop = function () {
+    running = false
     if (timer) clearInterval(timer)
     timer = undefined
   }

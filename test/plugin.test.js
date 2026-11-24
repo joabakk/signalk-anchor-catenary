@@ -256,6 +256,54 @@ test('snubber needs a length in the settings, and is cleared when the anchor com
   t.plugin.stop()
 })
 
+test('chart plotter widgets: manifest served while the plugin runs', async () => {
+  const providers = []
+  const t = setup({ 'navigation.position': ANTENNA })
+  t.plugin.stop()
+  const app = Object.assign({}, t.app, { registerResourceProvider: p => providers.push(p) })
+  const plugin = require('../index')(app)
+  plugin.start({ interval: 3600 })
+  assert.strictEqual(providers.length, 1)
+  assert.strictEqual(providers[0].type, 'plotterExtensions')
+  const list = await providers[0].methods.listResources({})
+  const m = list['signalk-anchor-catenary']
+  assert.ok(m, 'listed under the plugin id')
+  assert.strictEqual(m.apiVersion, '1')
+  assert.strictEqual(typeof m.name, 'string')
+  assert.deepStrictEqual(m.widgets.map(w => [w.id, w.size]), [['profile', '2x1'], ['profile-large', '2x2'], ['status', '1x1']])
+  for (const w of m.widgets) assert.ok(w.url.startsWith('/signalk-anchor-catenary/widget.html?view=' + w.id))
+  assert.strictEqual(m.buttons[0].action.panel, m.panels[0].id)
+  assert.deepStrictEqual(await providers[0].methods.getResource('signalk-anchor-catenary'), m)
+  await assert.rejects(providers[0].methods.setResource('x', {}))
+
+  // stopped: nothing listed; started again: not registered twice
+  plugin.stop()
+  assert.deepStrictEqual(await providers[0].methods.listResources({}), {})
+  await assert.rejects(providers[0].methods.getResource('signalk-anchor-catenary'))
+  plugin.start({ interval: 3600 })
+  assert.strictEqual(providers.length, 1)
+  assert.ok((await providers[0].methods.listResources({}))['signalk-anchor-catenary'])
+  plugin.stop()
+})
+
+test('routes: reading open to logged-in users, setting values to read/write users', () => {
+  const t = setup({ 'navigation.position': ANTENNA })
+  const levels = {}
+  const level = lvl => ({
+    get (p) { levels['GET ' + p] = lvl; return this },
+    post (p) { levels['POST ' + p] = lvl; return this }
+  })
+  t.plugin.registerWithRouter({ use () {}, access: level, get () { throw new Error('unprotected GET') }, post () { throw new Error('unprotected POST') } })
+  assert.deepStrictEqual(levels, {
+    'GET /state': 'readonly',
+    'POST /rode': 'readwrite',
+    'POST /seabed': 'readwrite',
+    'POST /snubber': 'readwrite',
+    'POST /record': 'readwrite'
+  })
+  t.plugin.stop()
+})
+
 ;(async () => {
   let failed = 0
   for (const t of tests) {

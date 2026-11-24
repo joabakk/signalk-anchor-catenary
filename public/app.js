@@ -383,6 +383,13 @@
     savePrefs(); draw()
   })
 
+  // Inside a chart plotter such as Freeboard-SK: follow its night mode
+  PlotterBus.connect().then(bus => PlotterBus.followNightMode(bus, on => {
+    if (on) document.documentElement.dataset.theme = 'night'
+    else if (!prefs.night) delete document.documentElement.dataset.theme
+    draw()
+  }))
+
   window.addEventListener('resize', () => { if (state) drawSide() })
   poll()
   setInterval(poll, 2000)

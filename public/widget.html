@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anchor Catenary Widget</title>
+  <style>
+    :root {
+      --card: rgba(255, 255, 255, var(--opacity, 0.88));
+      --text: #17212b; --muted: #5d6b78; --line: #d5dce3;
+      --water: #d6e9f5; --water-edge: #5a9bc4; --seabed: #b9a17a;
+      --chain: #1f2d3a; --bottom-chain: #8a6d3b; --rope: #1f8fa0; --snubber: #5c9a1e;
+      --accent: #1769aa; --ok: #2e7d4f; --warn: #b26a00; --alarm: #c62828;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --card: rgba(24, 33, 42, var(--opacity, 0.88));
+        --text: #e3e9ee; --muted: #93a1ad; --line: #2c3a46;
+        --water: #11314a; --water-edge: #4c8fbd; --seabed: #6f5d40;
+        --chain: #e3e9ee; --bottom-chain: #d0a65c; --rope: #5cc4d1; --snubber: #9ccc65;
+        --accent: #5aa9e6; --ok: #5cc28a; --warn: #f0a838; --alarm: #ff6b6b;
+      }
+    }
+    :root[data-theme="dark"] {
+      --card: rgba(24, 33, 42, var(--opacity, 0.88));
+      --text: #e3e9ee; --muted: #93a1ad; --line: #2c3a46;
+      --water: #11314a; --water-edge: #4c8fbd; --seabed: #6f5d40;
+      --chain: #e3e9ee; --bottom-chain: #d0a65c; --rope: #5cc4d1; --snubber: #9ccc65;
+      --accent: #5aa9e6; --ok: #5cc28a; --warn: #f0a838; --alarm: #ff6b6b;
+    }
+    /* Night: dim red, to keep night vision */
+    :root[data-theme="night"] {
+      --card: rgba(10, 0, 0, var(--opacity, 0.9));
+      --text: #c43a3a; --muted: #7a2222; --line: #3a0e0e;
+      --water: #1a0303; --water-edge: #6e1a1a; --seabed: #3a0d0d;
+      --chain: #d04040; --bottom-chain: #902c2c; --rope: #b05050; --snubber: #f07070;
+      --accent: #d04040; --ok: #c43a3a; --warn: #e05050; --alarm: #ff4040;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+    body {
+      color: var(--text);
+      font: 12px/1.25 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-variant-numeric: tabular-nums;
+      -webkit-user-select: none; user-select: none;
+    }
+    #card {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      background: var(--card); border-radius: 8px; padding: 6px 8px; overflow: hidden;
+    }
+    .top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; white-space: nowrap; }
+    .state { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+    .state.ok { color: var(--ok); } .state.warn { color: var(--warn); } .state.alarm { color: var(--alarm); }
+    .muted { color: var(--muted); }
+    #side { flex: 1; min-height: 0; width: 100%; display: block; margin-top: 3px; }
+    .big { font-size: 26px; font-weight: 700; line-height: 1.05; }
+    .big small { font-size: 13px; font-weight: 600; }
+    .nums { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; margin-top: 4px; }
+    .nums dt { color: var(--muted); } .nums dd { margin: 0; text-align: right; font-weight: 600; }
+    .nums dd.warn { color: var(--warn); } .nums dd.alarm { color: var(--alarm); }
+    .msg { margin: auto; text-align: center; color: var(--muted); padding: 4px; }
+    .status { justify-content: space-between; }
+  </style>
+</head>
+<body>
+  <div id="card"><div class="msg">Anchor catenary…</div></div>
+  <script src="bus.js"></script>
+  <script src="widget.js"></script>
+</body>
+</html>

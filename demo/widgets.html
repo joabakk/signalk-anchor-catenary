@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Widget Preview</title>
+  <style>
+    :root { --bg: #c9d8c5; --text: #17212b; --panel: #ffffff; --line: #d5dce3; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { --bg: #1d2a33; --text: #e3e9ee; --panel: #18212a; --line: #2c3a46; }
+    }
+    :root[data-theme="night"] { --bg: #000; --text: #c43a3a; --panel: #0a0000; --line: #3a0e0e; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--text); font: 14px/1.4 system-ui, sans-serif;
+      /* a chart-ish background: the widgets sit over the chart in Freeboard-SK */
+      background: var(--bg) repeating-linear-gradient(45deg, transparent 0 22px, rgba(0, 0, 0, 0.04) 22px 23px);
+    }
+    header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    h1 { font-size: 17px; margin: 0; }
+    p { margin: 0; font-size: 13px; opacity: 0.8; }
+    button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+    main { display: flex; flex-wrap: wrap; gap: 24px; padding: 16px; align-items: flex-start; }
+    figure { margin: 0; }
+    figcaption { font-size: 12px; margin-top: 4px; }
+    iframe { border: 0; display: block; background: transparent; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Freeboard-SK widget preview</h1>
+    <button id="night">Night mode: off</button>
+    <p>Each widget is shown at Freeboard's cell size (110 px), as it sits over the chart.</p>
+  </header>
+  <main id="widgets"></main>
+  <script>
+    // A minimal plotter extension host, speaking the plotterExt/1 bus like Freeboard-SK
+    const BUS = 'plotterExt/1'
+    const CELL = 110
+    const GAP = 6
+    const WIDGETS = [['status', 1, 1], ['profile', 2, 1], ['profile-large', 2, 2]]
+    const frames = []
+    let night = false
+
+    for (const [id, cols, rows] of WIDGETS) {
+      const fig = document.createElement('figure')
+      const f = document.createElement('iframe')
+      f.src = '/widget.html?view=' + id
+      f.width = cols * CELL + (cols - 1) * GAP
+      f.height = rows * CELL + (rows - 1) * GAP
+      f.title = id
+      f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms')
+      const cap = document.createElement('figcaption')
+      cap.textContent = `${id} (${cols}x${rows})`
+      fig.append(f, cap)
+      document.getElementById('widgets').appendChild(fig)
+      frames.push({ id, frame: f, subscribed: [] })
+    }
+
+    const send = (w, msg) => w.frame.contentWindow.postMessage({ bus: BUS, msg: Object.assign({ jsonrpc: '2.0' }, msg) }, location.origin)
+    const matches = (pattern, name) => new RegExp('^' + pattern.replace(/\./g, '\\.').replace(/\*\*/g, '.*').replace(/(^|[^.])\*/g, '$1[^.]*') + '$').test(name)
+    const publish = (name, params) => {
+      for (const w of frames) if (w.subscribed.some(p => matches(p, name))) send(w, { method: name, params })
+    }
+
+    window.addEventListener('message', ev => {
+      if (ev.origin !== location.origin || !ev.data || ev.data.bus !== BUS) return
+      const w = frames.find(x => x.frame.contentWindow === ev.source)
+      if (!w) return
+      const m = ev.data.msg
+      if (m.method === 'bus.ready') {
+        send(w, {
+          method: 'bus.handshake',
+          params: {
+            host: 'widget-preview',
+            hostVersion: '1',
+            apiVersion: '1',
+            capabilities: ['widgets', 'nightMode', 'display'],
+            context: { kind: 'widget', id: w.id, instanceId: w.id + '-1', targetInstance: null }
+          }
+        })
+        return
+      }
+      if (m.id === undefined) return
+      const reply = result => send(w, { id: m.id, result })
+      switch (m.method) {
+        case 'events.subscribe': w.subscribed.push(...(m.params.patterns || [])); return reply({ subscriptionId: String(w.subscribed.length) })
+        case 'nightMode.get': return reply({ enabled: night, auto: false })
+        case 'display.get': return reply({ panelOpacity: 0.85, colorScheme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' })
+        default: send(w, { id: m.id, error: { code: -32601, message: 'Method not found' } })
+      }
+    })
+
+    document.getElementById('night').addEventListener('click', e => {
+      night = !night
+      e.target.textContent = 'Night mode: ' + (night ? 'on' : 'off')
+      if (night) document.documentElement.dataset.theme = 'night'
+      else delete document.documentElement.dataset.theme
+      publish('nightMode.changed', { enabled: night, auto: false })
+    })
+  </script>
+</body>
+</html>

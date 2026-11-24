@@ -117,7 +117,27 @@ Open **Anchor Catenary** from the server's Webapps menu, or go to `http://<serve
   anchor, or hook the snubber on and off.
 - Red **night** mode.
 
-Setting values from the webapp needs a logged-in user if the server has security turned on.
+Setting values from the webapp needs a logged-in user if the server has security turned on. On Signal K server 2.37 and later,
+any logged-in user can read the webapp and read/write users can set values; older servers allow only admins.
+
+## Freeboard-SK widgets
+
+With [Freeboard-SK](https://www.npmjs.com/package/@signalk/freeboard-sk) 3.5 or later the plugin adds, through its
+`plotterExtensions` resource:
+
+- three **screen widgets** to place over the chart:
+  - *Anchor rode: status* (1×1): state, rode on the bottom and the margin before the anchor lifts;
+  - *Anchor rode: side view* (2×1): the rode from the anchor to the bow, with the lift-off line;
+  - *Anchor rode: side view and numbers* (2×2): the same, with rode on the bottom, rode out and scope, depth, pull and the pull
+    to lift the anchor.
+- an **Anchor catenary** button on Freeboard's extension toolbar, which opens the full webapp in a floating window.
+
+To place a widget, press and hold (or right-click) an empty spot in a corner of the chart, or at the middle of the top or bottom
+edge, and pick it from the list. The widgets and the window follow Freeboard's night mode. The side view in the widgets is
+stretched to fit, so its vertical scale is exaggerated.
+
+The plugin must be enabled for the widgets to appear. To see them without Freeboard, run `npm run demo` and open
+http://localhost:3000/widgets.
 
 ## REST API
 
@@ -151,7 +171,7 @@ To try the webapp without a Signal K server or a boat:
 npm run demo
 ```
 
-Then open http://localhost:3000/. The demo runs the plugin against a simulated boat that swings round the anchor and falls
+Then open http://localhost:3000/, and http://localhost:3000/widgets for the Freeboard-SK widgets. The demo runs the plugin against a simulated boat that swings round the anchor and falls
 back in the gusts, with 50 m of chain and then nylon, a 6 m snubber and a falling tide. Set the rode out and hook the snubber on
 and off from the webapp. Use `PORT=8080 npm run demo` for another port.
 
