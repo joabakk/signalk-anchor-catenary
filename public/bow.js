@@ -163,7 +163,8 @@ window.Bow = (function () {
    */
   function plan (style, L, B) {
     if (style === 'doubleEnder') {
-      const half = [[0, 0], [-0.12 * L, 0.33 * B], [-0.32 * L, 0.5 * B], [-0.6 * L, 0.49 * B], [-0.85 * L, 0.3 * B], [-L, 0]]
+      // fine at the bow, full aft, round to the sternpost
+      const half = [[0, 0], [-0.07 * L, 0.13 * B], [-0.2 * L, 0.33 * B], [-0.4 * L, 0.48 * B], [-0.62 * L, 0.5 * B], [-0.82 * L, 0.42 * B], [-0.95 * L, 0.24 * B], [-L, 0]]
       const curve = smooth(half)
       return { outline: curve.concat(curve.slice(1, -1).reverse().map(([f, st]) => [f, -st])) }
     }
