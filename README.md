@@ -9,7 +9,7 @@ A Signal K server plugin and webapp that shows how your anchor rode is lying rig
 
 The rode can be all chain, chain of different sizes, or chain and rope, with or without a snubber.
 
-![Side and plan view](docs/screenshot.png)
+![The webapp: side view with the rode, snubber and slack loop, the numbers, the plan view and the inputs](docs/screenshot.png)
 
 Anchor alarm plugins tell you when the boat has left its swinging circle. Scope calculators tell you how much chain to put out.
 This plugin fills the gap between the two. From the anchor position, the boat's position and heading, and the water depth at the
@@ -138,6 +138,8 @@ the MFD. Install that plugin, open its settings and enable **Anchor Catenary** i
 
 Tested through signalk-navico-embedder 1.8.0's proxy on Signal K 2.37, not yet on an MFD.
 
+<img src="docs/night-phone.png" width="300" alt="The webapp at phone width in red night mode, as an MFD shows it with ?mode=night">
+
 ## Freeboard-SK widgets
 
 With [Freeboard-SK](https://www.npmjs.com/package/@signalk/freeboard-sk) 3.5 or later the plugin adds, through its
@@ -156,6 +158,8 @@ water depth is stretched to fit; the boat is drawn to scale.
 
 The plugin must be enabled for the widgets to appear. To see them without Freeboard, run `npm run demo` and open
 http://localhost:3000/widgets.
+
+![The three Freeboard-SK widgets: status, side view, and side view with numbers](docs/widgets.png)
 
 ## REST API
 

@@ -45,7 +45,9 @@
     "displayName": "Anchor Catenary",
     "appIcon": "icon.png",
     "screenshots": [
-      "docs/screenshot.png"
+      "docs/screenshot.png",
+      "docs/widgets.png",
+      "docs/night-phone.png"
     ]
   },
   "bugs": {

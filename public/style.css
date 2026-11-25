@@ -115,6 +115,7 @@ input, select, button {
 input { width: 90px; }
 button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
 :root[data-theme="night"] button { color: #000; }
+:root[data-theme="night"] button.ghost { color: var(--text); }
 button.ghost { background: transparent; color: var(--text); border-color: var(--line); }
 p { margin: 4px 0; }
 .missing { margin-top: 8px; color: var(--warn); }
