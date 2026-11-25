@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Night mode: the outline buttons (Night, Clear, Off) had black text on black and could not be read, also on MFDs.
+- New screenshots in the README and the App Store: the webapp, the Freeboard-SK widgets, and phone width in night mode.
+
 ## 0.1.0
 
 First release.

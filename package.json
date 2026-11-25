@@ -1,6 +1,6 @@
 {
   "name": "signalk-anchor-catenary",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Live anchor rode catenary for Signal K: how much chain and rope lies on the bottom, rode angle at the anchor and tension, with chain sections, rope and snubber, from anchor and boat positions, heading, bow roller position and height, depth and tide",
   "main": "index.js",
   "files": [
